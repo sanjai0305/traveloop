@@ -20,7 +20,7 @@ const getApiBaseUrl = () => {
   }
 
   // Production or fallback
-  return "https://traveloop-751k.vercel.app/api";
+  return "https://trip-planner-hackathon-e9y3.vercel.app/api";
 };
 
 const API_BASE_URL = getApiBaseUrl();

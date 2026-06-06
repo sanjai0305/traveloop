@@ -1985,7 +1985,7 @@ const BuildItinerary = () => {
 
       const data = await res.json();
       if (data.success) {
-        const publicUrl = `https://traveloop-751k.vercel.app/shared/${data.trip.shareToken}`;
+        const publicUrl = `https://trip-planner-hackathon-e9y3.vercel.app/shared/${data.trip.shareToken}`;
         navigator.clipboard.writeText(publicUrl);
         setCopiedLink(true);
         toast.success("Public link copied to clipboard!");
