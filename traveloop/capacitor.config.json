@@ -1,0 +1,25 @@
+{
+  "appId": "com.sanjai.traveloop",
+  "appName": "Traveloop",
+  "webDir": "dist",
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "872930983851-sp955pg20dv701f90lfej5ult72tle27.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    }
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": false,
+    "webContentsDebuggingEnabled": false,
+    "initialFocus": false,
+    "buildOptions": {
+      "keystorePath": null,
+      "keystorePassword": null,
+      "keystoreAlias": null,
+      "keystoreAliasPassword": null,
+      "releaseType": "AAB"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('purify')) {
+              return 'pdf-generator';
+            }
+            if (id.includes('lucide-react')) {
+              return 'icons';
+            }
+            if (id.includes('framer-motion')) {
+              return 'animations';
+            }
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'react-core';
+            }
+            return 'vendor';
+          }
+        }
+      }
+    }
+  }
+})

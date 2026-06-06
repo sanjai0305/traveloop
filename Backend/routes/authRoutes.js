@@ -1,0 +1,32 @@
+import express from "express";
+
+import {
+  registerUser,
+  loginUser,
+  getMe,
+  googleAuth,
+  acceptTerms,
+} from "../controllers/authController.js";
+import protect from "../middleware/authMiddleware.js";
+
+const router = express.Router();
+
+
+// REGISTER
+router.post("/register", registerUser);
+
+
+// LOGIN
+router.post("/login", loginUser);
+
+// GOOGLE AUTH
+router.post("/google", googleAuth);
+
+// GET CURRENT USER
+router.get("/me", protect, getMe);
+
+// ACCEPT TERMS
+router.patch("/accept-terms", protect, acceptTerms);
+
+
+export default router;
