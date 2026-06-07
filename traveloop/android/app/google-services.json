@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "176828060174",
+    "project_id": "traveloop-21307",
+    "storage_bucket": "traveloop-21307.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:176828060174:android:9d2c22b7e49cf877d6625f",
+        "android_client_info": {
+          "package_name": "com.sanjai.traveloop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1spB6-nbWi6f7GnIssbkZpHqTy3Wut30"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
