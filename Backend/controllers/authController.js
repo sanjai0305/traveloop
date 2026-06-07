@@ -5,6 +5,8 @@ import Flight from "../models/Flight.js";
 
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
+import { sendWelcomeEmail } from "../services/emailService.js";
 
 
 
@@ -25,9 +27,7 @@ const generateToken = (id) => {
 
 // REGISTER USER
 export const registerUser = async (req, res) => {
-
   try {
-
     const {
       firstName,
       lastName,
@@ -39,6 +39,7 @@ export const registerUser = async (req, res) => {
       password,
       acceptedTerms,
       termsVersion,
+      firebaseUid,
     } = req.body;
 
     if (!firstName || !lastName || !email || !phone || !city || !country || !password) {
@@ -55,13 +56,37 @@ export const registerUser = async (req, res) => {
       });
     }
 
+    // Email format validation
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address.",
+      });
+    }
+
+    // Phone validation
+    if (!isValidPhone(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid phone number (7-15 digits, numeric).",
+      });
+    }
+
+    // Password strength check
+    const pwdStrength = isStrongPassword(password);
+    if (!pwdStrength.valid) {
+      return res.status(400).json({
+        success: false,
+        message: pwdStrength.message,
+      });
+    }
+
     // CHECK EXISTING USER
     const userExists = await User.findOne({
-      email,
+      email: email.trim().toLowerCase(),
     });
 
     if (userExists) {
-
       return res.status(400).json({
         success: false,
         message: "User already exists",
@@ -70,15 +95,13 @@ export const registerUser = async (req, res) => {
 
     // HASH PASSWORD
     const salt = await bcrypt.genSalt(10);
-
-    const hashedPassword =
-      await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
     // CREATE USER
     const user = await User.create({
       firstName,
       lastName,
-      email,
+      email: email.trim().toLowerCase(),
       phone,
       city,
       country,
@@ -87,13 +110,20 @@ export const registerUser = async (req, res) => {
       acceptedTerms: true,
       termsAcceptedAt: new Date(),
       termsVersion: "2026-06",
+      firebaseUid: firebaseUid || "",
     });
+
+    // Send welcome email (async)
+    try {
+      sendWelcomeEmail(user.email, user.firstName);
+    } catch (emailErr) {
+      console.error("Failed to send welcome email:", emailErr);
+    }
 
     // RESPONSE
     res.status(201).json({
       success: true,
       message: "User Registered Successfully",
-
       user: {
         _id: user._id,
         firstName: user.firstName,
@@ -106,13 +136,11 @@ export const registerUser = async (req, res) => {
         acceptedTerms: user.acceptedTerms,
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: user.termsVersion,
+        firebaseUid: user.firebaseUid,
       },
-
       token: generateToken(user._id),
     });
-
   } catch (error) {
-
     res.status(500).json({
       success: false,
       message: error.message,
@@ -125,18 +153,22 @@ export const registerUser = async (req, res) => {
 
 // LOGIN USER
 export const loginUser = async (req, res) => {
-
   try {
+    const { email, password, firebaseUid } = req.body;
 
-    const { email, password } = req.body;
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address.",
+      });
+    }
 
     // FIND USER
     const user = await User.findOne({
-      email,
+      email: email.trim().toLowerCase(),
     });
 
     if (!user) {
-
       return res.status(400).json({
         success: false,
         message: "Invalid Email",
@@ -144,24 +176,25 @@ export const loginUser = async (req, res) => {
     }
 
     // CHECK PASSWORD
-    const isMatch = await bcrypt.compare(
-      password,
-      user.password
-    );
-
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-
       return res.status(400).json({
         success: false,
         message: "Invalid Password",
       });
     }
 
+    // Update lastLogin & firebaseUid if provided and not already set
+    user.lastLogin = new Date();
+    if (firebaseUid && !user.firebaseUid) {
+      user.firebaseUid = firebaseUid;
+    }
+    await user.save();
+
     // SUCCESS
     res.status(200).json({
       success: true,
       message: "Login Successful",
-
       user: {
         _id: user._id,
         firstName: user.firstName,
@@ -174,13 +207,12 @@ export const loginUser = async (req, res) => {
         acceptedTerms: user.acceptedTerms,
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: user.termsVersion,
+        firebaseUid: user.firebaseUid,
+        lastLogin: user.lastLogin,
       },
-
       token: generateToken(user._id),
     });
-
   } catch (error) {
-
     res.status(500).json({
       success: false,
       message: error.message,
@@ -471,5 +503,57 @@ export const acceptTerms = async (req, res) => {
   } catch (error) {
     console.error("Accept Terms Error:", error);
     res.status(500).json({ success: false, message: error.message || "Server Error" });
+  }
+};
+
+// FORGOT PASSWORD
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email is required." });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
+    }
+
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "No account found with this email address." });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Email verified. Proceed with password reset.",
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// VALIDATE EMAIL AVAILABILITY
+export const validateEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email is required." });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
+    }
+
+    const userExists = await User.findOne({ email: email.trim().toLowerCase() });
+    if (userExists) {
+      return res.status(400).json({ success: false, message: "Email is already registered." });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Email is available.",
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

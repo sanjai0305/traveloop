@@ -2,7 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-
+import helmet from "helmet";
+import sanitizeInput from "./middleware/sanitize.js";
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
 import itineraryRoutes from "./routes/itineraryRoutes.js";
@@ -59,13 +60,23 @@ const authLimiter = rateLimit({
 });
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || "*",
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  credentials: true,
+  optionsSuccessStatus: 204
+};
+app.use(cors(corsOptions));
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+}));
 
 // Larger body limit for specific endpoints (e.g. base64 uploads)
 app.use("/api/scanner", express.json({ limit: "10mb" }));
 app.use("/api/profile", express.json({ limit: "5mb" }));
 
 app.use(express.json({ limit: "100kb" }));
+app.use(sanitizeInput);
 app.use(globalLimiter);
 
 // Health Check

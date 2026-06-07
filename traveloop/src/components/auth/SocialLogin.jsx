@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { getApiUrl } from "../../utils/api";
+import { loginWithGoogle } from "../../services/authService";
 
 // Timeout for backend token exchange (ms)
 const GOOGLE_AUTH_TIMEOUT_MS = 15000;
@@ -114,66 +115,22 @@ const SocialLogin = () => {
   const sendTokenToBackend = async (idToken) => {
     setLoading(true);
 
-    // AbortController for timeout protection
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      console.error("[GoogleAuth Audit] Backend request timed out after", GOOGLE_AUTH_TIMEOUT_MS, "ms");
-    }, GOOGLE_AUTH_TIMEOUT_MS);
-
     try {
-      const url = getApiUrl("auth/google");
-      console.log("[GoogleAuth Audit] Sending token to backend:", url);
-      console.log("[GoogleAuth Audit] idToken present:", !!idToken);
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ idToken }),
-        signal: controller.signal,
-      });
-
-      console.log("[GoogleAuth Audit] Backend response status:", res.status);
-      const data = await res.json();
-      console.log("[GoogleAuth Audit] Backend response body:", data);
-
-      if (!res.ok) {
-        console.error("[GoogleAuth Audit] Google auth backend error:", data.message);
-        // Show error inline — avoid alert() on mobile
-        window.dispatchEvent(
-          new CustomEvent("auth:google:error", {
-            detail: data.message || "Google Sign-In failed. Please try again.",
-          })
-        );
-        return;
-      }
+      console.log("[GoogleAuth Audit] Performing Google Login flow...");
+      const data = await loginWithGoogle(idToken);
 
       // Commit auth state (synchronous)
       login(data.user, data.token);
       console.log("[GoogleAuth Audit] Login successful. Navigating to dashboard.");
       navigate("/dashboard", { replace: true });
-
     } catch (err) {
-      if (err.name === "AbortError") {
-        console.error("[GoogleAuth Audit] Request aborted (timeout).");
-        window.dispatchEvent(
-          new CustomEvent("auth:google:error", {
-            detail: "Google Sign-In timed out. Please try again.",
-          })
-        );
-      } else {
-        console.error("[GoogleAuth Audit] Unexpected error:", err.message, err);
-        window.dispatchEvent(
-          new CustomEvent("auth:google:error", {
-            detail: "Sign-In connection error. Please check your internet.",
-          })
-        );
-      }
+      console.error("[GoogleAuth Audit] Unexpected error:", err.message, err);
+      window.dispatchEvent(
+        new CustomEvent("auth:google:error", {
+          detail: err.message || "Google Sign-In failed. Please check your internet.",
+        })
+      );
     } finally {
-      // ALWAYS reset loading — no matter success or failure
-      clearTimeout(timeoutId);
       setLoading(false);
     }
   };

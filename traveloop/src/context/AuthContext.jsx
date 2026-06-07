@@ -1,8 +1,9 @@
 // src/context/AuthContext.jsx
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { getApiUrl } from "../utils/api";
-import { onAuthStateChanged, signOut as fbSignOut, signInAnonymously } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../services/firebase";
+import { sendPasswordReset, signOutUser } from "../services/authService";
 
 const AuthContext = createContext(null);
 
@@ -19,7 +20,7 @@ export const AuthProvider = ({ children }) => {
 
   // ─── CLEAN LOGOUT (internal helper) ───────────────────────────────────────
   const performLogout = () => {
-    fbSignOut(auth).catch((err) => console.warn("[Auth] Firebase SignOut error:", err));
+    signOutUser().catch((err) => console.warn("[Auth] Firebase SignOut error:", err));
     setUser(null);
     setToken(null);
     setIsAuthenticated(false);
@@ -48,13 +49,6 @@ export const AuthProvider = ({ children }) => {
             setToken(storedToken);
             setIsAuthenticated(true);
             console.log("[Auth] Safety timeout: restored session from localStorage.");
-            
-            // Re-introduce background anonymous sign in if no firebase user
-            if (!auth.currentUser) {
-              signInAnonymously(auth).catch((err) => {
-                console.error("[Auth] Safety timeout background anonymous sign in failed:", err);
-              });
-            }
           } catch (e) {
             console.error("[Auth] Safety timeout: failed to parse cached user.", e);
             performLogout();
@@ -107,7 +101,7 @@ export const AuthProvider = ({ children }) => {
             } else {
               // Firebase has a user but no local JWT — sign out of Firebase cleanly
               console.warn("[Auth] Firebase user without matching JWT. Signing out Firebase.");
-              fbSignOut(auth).catch(() => {});
+              signOutUser().catch(() => {});
               setIsAuthenticated(false);
             }
           } else {
@@ -123,13 +117,6 @@ export const AuthProvider = ({ children }) => {
 
                 // Verify token with backend in the background
                 verifyTokenInBackground(storedToken);
-
-                // Re-introduce background anonymous sign in if no firebase user
-                if (!fbUser) {
-                  signInAnonymously(auth).catch((err) => {
-                    console.error("[Auth] Startup background anonymous sign in failed:", err);
-                  });
-                }
               } catch (e) {
                 console.error("[Auth] Failed to parse stored user:", e);
                 performLogout();
@@ -240,13 +227,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("token", userToken);
     localStorage.setItem("user", JSON.stringify(userData));
     console.log("[Auth] handleLogin: session committed for", userData.email);
-
-    // Sign in to Firebase anonymously in the background if not already signed in
-    if (!auth.currentUser) {
-      signInAnonymously(auth).catch((err) => {
-        console.error("[Auth] Login background anonymous sign in failed:", err);
-      });
-    }
   };
 
   // ─── LOGOUT ────────────────────────────────────────────────────────────────
@@ -273,6 +253,7 @@ export const AuthProvider = ({ children }) => {
         logout: handleLogout,
         updateUser: handleUpdateUser,
         refreshUserData,
+        sendPasswordReset,
       }}
     >
       {children}

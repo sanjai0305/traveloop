@@ -15,6 +15,7 @@ import InputField from "../common/InputField";
 import Button from "../common/Button";
 import { getApiUrl } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
+import { loginWithEmailPassword } from "../../services/authService";
 
 const LoginForm = () => {
   const { login } = useAuth();
@@ -69,112 +70,56 @@ const LoginForm = () => {
 
   // VALIDATE
   const validateForm = () => {
-
     let newErrors = {};
 
     if (!formData.email.trim()) {
-
-      newErrors.email =
-        "Email is required";
+      newErrors.email = "Email is required";
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      if (!emailRegex.test(formData.email.trim().toLowerCase())) {
+        newErrors.email = "Please enter a valid email address";
+      }
     }
 
-    if (
-      !formData.password.trim()
-    ) {
-
-      newErrors.password =
-        "Password is required";
-
-    } else if (
-      formData.password.length < 6
-    ) {
-
-      newErrors.password =
-        "Password must be at least 6 characters";
+    if (!formData.password.trim()) {
+      newErrors.password = "Password is required";
+    } else if (formData.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
     }
 
     setErrors(newErrors);
-
-    return (
-      Object.keys(newErrors)
-        .length === 0
-    );
+    return Object.keys(newErrors).length === 0;
   };
 
-
-
-
   // HANDLE LOGIN
-  const handleSubmit =
-    async (e) => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateForm()) return;
 
-      e.preventDefault();
+    setLoading(true);
 
-      if (!validateForm())
-        return;
+    try {
+      const data = await loginWithEmailPassword(formData.email, formData.password);
 
-      setLoading(true);
+      // SAVE AUTH STATE GLOBALLY & LOCALLY (synchronous — no await needed)
+      login(data.user, data.token);
 
-      try {
+      // CLEAR FORM
+      setFormData({
+        email: "",
+        password: "",
+      });
 
-        const response =
-          await fetch(
-            getApiUrl("auth/login"),
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
-              body:
-                JSON.stringify({
-                  email:
-                    formData.email,
-
-                  password:
-                    formData.password,
-                }),
-            }
-          );
-
-        const data =
-          await response.json();
-
-        // ERROR
-        if (!response.ok) {
-          setErrors({ general: data.message || "Login failed. Please check your credentials." });
-          console.error("[LoginForm] Login error:", data.message);
-          return;
-        }
-
-        // SAVE AUTH STATE GLOBALLY & LOCALLY (synchronous — no await needed)
-        login(data.user, data.token);
-
-        // CLEAR FORM
-        setFormData({
-          email: "",
-          password: "",
-        });
-
-        // NAVIGATE DASHBOARD
-        navigate(
-          "/dashboard",
-          { replace: true }
-        );
-
-      } catch (error) {
-
-        console.error("[LoginForm] Network error during login:", error);
-        setErrors({ general: "Connection error. Please check your internet and try again." });
-
-      } finally {
-
-        // ALWAYS reset loading regardless of success or failure
-        setLoading(false);
-      }
-    };
+      // NAVIGATE DASHBOARD
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      console.error("[LoginForm] Error during login:", error);
+      setErrors({ general: error.message || "Login failed. Please check your credentials." });
+    } finally {
+      // ALWAYS reset loading regardless of success or failure
+      setLoading(false);
+    }
+  };
 
 
 
@@ -262,6 +207,7 @@ const LoginForm = () => {
         {/* FORGOT */}
         <button
           type="button"
+          onClick={() => navigate("/forgot-password")}
           className="
             text-sm
             font-semibold

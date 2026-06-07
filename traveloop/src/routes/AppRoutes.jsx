@@ -36,6 +36,7 @@ const TermsConditions = lazy(() => import("../pages/TermsConditions"));
 const TermsAndConditions = lazy(() => import("../pages/TermsAndConditions"));
 const TravelJournal = lazy(() => import("../pages/TravelJournal"));
 const NearbyPlaces = lazy(() => import("../pages/NearbyPlaces"));
+const ForgotPassword = lazy(() => import("../pages/ForgotPassword"));
 
 // PROTECTED ROUTE
 import ProtectedRoute from "./ProtectedRoute";
@@ -82,6 +83,12 @@ const AppRoutes = () => {
           <Route
             path="/register"
             element={<Register />}
+          />
+
+          {/* FORGOT PASSWORD */}
+          <Route
+            path="/forgot-password"
+            element={<ForgotPassword />}
           />
 
           {/* DASHBOARD */}

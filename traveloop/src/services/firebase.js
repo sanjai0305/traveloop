@@ -7,7 +7,7 @@ import {
 } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, EmailAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBcdq0631ujc4JDdq4KMX4ggUewzFXEOsA",
@@ -80,4 +80,4 @@ try {
   console.error("Failed to initialize Auth:", e);
 }
 
-export { app, db, rtdb, storage, auth };
+export { app, db, rtdb, storage, auth, GoogleAuthProvider, EmailAuthProvider };

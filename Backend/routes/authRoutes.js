@@ -6,6 +6,8 @@ import {
   getMe,
   googleAuth,
   acceptTerms,
+  forgotPassword,
+  validateEmail,
 } from "../controllers/authController.js";
 import protect from "../middleware/authMiddleware.js";
 
@@ -15,12 +17,17 @@ const router = express.Router();
 // REGISTER
 router.post("/register", registerUser);
 
-
 // LOGIN
 router.post("/login", loginUser);
 
 // GOOGLE AUTH
 router.post("/google", googleAuth);
+
+// FORGOT PASSWORD
+router.post("/forgot-password", forgotPassword);
+
+// VALIDATE EMAIL
+router.post("/validate-email", validateEmail);
 
 // GET CURRENT USER
 router.get("/me", protect, getMe);

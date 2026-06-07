@@ -86,6 +86,8 @@ const userSchema = new mongoose.Schema(
     acceptedTerms: { type: Boolean, default: false },
     termsAcceptedAt: { type: Date, default: null },
     termsVersion: { type: String, default: "" },
+    lastLogin: { type: Date, default: null },
+    firebaseUid: { type: String, default: "" },
   },
   {
     timestamps: true,
