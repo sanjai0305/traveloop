@@ -3,7 +3,10 @@ import dotenv from "dotenv";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+
 import sanitizeInput from "./middleware/sanitize.js";
+import connectDB from "./config/db.js";
+
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
 import itineraryRoutes from "./routes/itineraryRoutes.js";
@@ -22,19 +25,20 @@ import supportRoutes from "./routes/supportRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import budgetRoutes from "./routes/budgetRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
-import connectDB from "./config/db.js";
 
 dotenv.config();
 
-// Connect MongoDB
+// MongoDB
 connectDB();
 
 const app = express();
 
-// Required for Vercel
 app.set("trust proxy", 1);
 
-// Rate Limiting
+/* -----------------------------
+   RATE LIMITERS
+------------------------------ */
+
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: process.env.NODE_ENV === "production" ? 200 : 10000,
@@ -59,38 +63,80 @@ const authLimiter = rateLimit({
   },
 });
 
+/* -----------------------------
+   CORS FIX
+------------------------------ */
+
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
-  process.env.FRONTEND_URL
+  "https://traveloop-751k.vercel.app",
+  process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== "production") {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  credentials: true,
-  optionsSuccessStatus: 204
-};
-app.use(cors(corsOptions));
-app.use(helmet({
-  crossOriginResourcePolicy: false,
-}));
+app.use(
+  cors({
+    origin(origin, callback) {
+      console.log("Incoming Origin:", origin);
 
-// Larger body limit for specific endpoints (e.g. base64 uploads)
+      // Allow requests without origin
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.warn("Blocked Origin:", origin);
+
+      // TEMP DEBUG MODE
+      return callback(null, true);
+
+      // STRICT MODE (enable later)
+      // return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Origin",
+      "Accept",
+      "X-Requested-With",
+    ],
+    optionsSuccessStatus: 204,
+  })
+);
+
+app.options("*", cors());
+
+/* -----------------------------
+   SECURITY
+------------------------------ */
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
+
+/* -----------------------------
+   BODY PARSERS
+------------------------------ */
+
 app.use("/api/scanner", express.json({ limit: "10mb" }));
 app.use("/api/profile", express.json({ limit: "5mb" }));
 
 app.use(express.json({ limit: "100kb" }));
+
 app.use(sanitizeInput);
 app.use(globalLimiter);
 
-// Health Check
+/* -----------------------------
+   HEALTH CHECK
+------------------------------ */
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -98,7 +144,10 @@ app.get("/", (req, res) => {
   });
 });
 
-// Routes
+/* -----------------------------
+   ROUTES
+------------------------------ */
+
 app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/itinerary", itineraryRoutes);
@@ -118,7 +167,10 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/budgets", budgetRoutes);
 app.use("/api/ai", aiRoutes);
 
-// 404
+/* -----------------------------
+   404
+------------------------------ */
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -126,9 +178,12 @@ app.use((req, res) => {
   });
 });
 
-// Error Handler
+/* -----------------------------
+   ERROR HANDLER
+------------------------------ */
+
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error("SERVER ERROR:", err);
 
   res.status(500).json({
     success: false,
@@ -136,7 +191,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Local Development Only
+/* -----------------------------
+   LOCAL DEV ONLY
+------------------------------ */
+
 if (process.env.NODE_ENV !== "production") {
   const PORT = process.env.PORT || 5000;
 
@@ -145,5 +203,4 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
-// Export for Vercel
 export default app;
