@@ -4,7 +4,9 @@ import { Mail, ArrowRight, ShieldCheck, RefreshCw } from "lucide-react";
 import AuthLayout from "../layouts/AuthLayout";
 import Button from "../components/common/Button";
 import { useAuth } from "../context/AuthContext";
-import { registerWithEmailPassword, sendOtpCode, verifyOtpCode } from "../services/authService";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../services/firebase";
+import { sendOtpCode, verifyOtpCode } from "../services/authService";
 
 const VerifyEmail = () => {
   const navigate = useNavigate();
@@ -21,6 +23,7 @@ const VerifyEmail = () => {
   // Timer for Resend OTP (30 seconds cooldown)
   const [resendTimer, setResendTimer] = useState(30);
   const [isResendDisabled, setIsResendDisabled] = useState(true);
+  const [resendCount, setResendCount] = useState(1); // Track resend attempts (Phase 4)
   
   const inputRefs = useRef([]);
 
@@ -90,7 +93,7 @@ const VerifyEmail = () => {
     }
   };
 
-  // Submit Handler
+  // Submit Handler (Atomic backend registration & Client auth sync)
   const handleVerify = async (e) => {
     if (e) e.preventDefault();
     const otpCode = otp.join("");
@@ -105,20 +108,24 @@ const VerifyEmail = () => {
     setSuccess("");
 
     try {
-      // 1. Verify OTP with backend and get verified token
-      const verifyRes = await verifyOtpCode(formData.email, otpCode);
-      const otpToken = verifyRes.otpToken;
+      // 1. Verify OTP and register user atomically on the backend
+      const verifyRes = await verifyOtpCode(formData.email, otpCode, formData);
+      const { user, token } = verifyRes;
 
       setSuccess("Email verified! Finalizing registration...");
 
-      // 2. Perform account creation in Firebase & Backend (in authService)
-      const data = await registerWithEmailPassword(formData, otpToken);
+      // 2. Synchronize client-side Firebase Auth state (Phase 6 Sync)
+      try {
+        await signInWithEmailAndPassword(auth, formData.email, formData.password);
+      } catch (fbErr) {
+        console.warn("Client Firebase Auth login failed, proceeding...", fbErr);
+      }
 
       // 3. Clear session storage cache
       sessionStorage.removeItem("traveloop_register_form");
 
       // 4. Log in globally in the App
-      login(data.user, data.token);
+      login(user, token);
 
       // 5. Success navigation
       navigate("/dashboard", { replace: true });
@@ -133,7 +140,7 @@ const VerifyEmail = () => {
 
   // Resend Handler
   const handleResend = async () => {
-    if (isResendDisabled) return;
+    if (isResendDisabled || resendCount >= 5) return;
 
     setLoading(true);
     setError("");
@@ -145,6 +152,7 @@ const VerifyEmail = () => {
       setOtp(new Array(6).fill(""));
       setResendTimer(30);
       setIsResendDisabled(true);
+      setResendCount((prev) => prev + 1);
       if (inputRefs.current[0]) {
         inputRefs.current[0].focus();
       }
@@ -229,15 +237,19 @@ const VerifyEmail = () => {
             <button
               type="button"
               onClick={handleResend}
-              disabled={isResendDisabled || loading}
+              disabled={isResendDisabled || loading || resendCount >= 5}
               className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-800 ${
-                isResendDisabled
+                (isResendDisabled || resendCount >= 5)
                   ? "bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-600 cursor-not-allowed"
                   : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-750 active:scale-[0.98]"
               }`}
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-              {isResendDisabled ? `Resend Code (${resendTimer}s)` : "Resend Code"}
+              {resendCount >= 5
+                ? "Resend Limit Reached"
+                : isResendDisabled
+                ? `Resend in ${resendTimer}s`
+                : "Resend Code"}
             </button>
           </div>
         </form>

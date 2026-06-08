@@ -39,8 +39,8 @@ export const sendOtpCode = async (formData) => {
 /**
  * Verifies OTP code.
  */
-export const verifyOtpCode = async (email, otp) => {
-  return await apiRequest("/auth/verify-otp", "POST", { email, otp });
+export const verifyOtpCode = async (email, otp, registrationDetails) => {
+  return await apiRequest("/auth/verify-otp", "POST", { email, otp, registrationDetails });
 };
 
 /**

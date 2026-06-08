@@ -7,7 +7,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
 import { sendWelcomeEmail, sendOtpEmail } from "../services/emailService.js";
-import Otp from "../models/Otp.js";
+import { doc, setDoc, getDoc, deleteDoc, updateDoc } from "firebase/firestore";
+import { db, auth as firebaseAuth } from "../config/firebase.js";
+import { createUserWithEmailAndPassword, signInAnonymously } from "firebase/auth";
 
 
 
@@ -56,7 +58,6 @@ export const sendOtp = async (req, res) => {
       });
     }
 
-    // Email format validation
     if (!isValidEmail(email)) {
       return res.status(400).json({
         success: false,
@@ -64,7 +65,6 @@ export const sendOtp = async (req, res) => {
       });
     }
 
-    // Phone validation
     if (!isValidPhone(phone)) {
       return res.status(400).json({
         success: false,
@@ -72,7 +72,6 @@ export const sendOtp = async (req, res) => {
       });
     }
 
-    // Password strength check
     const pwdStrength = isStrongPassword(password);
     if (!pwdStrength.valid) {
       return res.status(400).json({
@@ -93,15 +92,40 @@ export const sendOtp = async (req, res) => {
       });
     }
 
-    // CHECK RESEND LIMIT COOLDOWN (30 seconds)
-    const existingOtp = await Otp.findOne({ email: email.trim().toLowerCase() });
-    if (existingOtp) {
+    const emailKey = email.trim().toLowerCase();
+    const otpDocRef = doc(db, "otps", emailKey);
+
+    // Ensure backend is authenticated to read/write Firestore
+    if (!firebaseAuth.currentUser) {
+      try {
+        await signInAnonymously(firebaseAuth);
+      } catch (authErr) {
+        console.error("Failed to sign in anonymously on backend sendOtp:", authErr);
+      }
+    }
+
+    const otpSnap = await getDoc(otpDocRef);
+
+    let resendAttempts = 0;
+    if (otpSnap.exists()) {
+      const data = otpSnap.data();
       const now = new Date();
-      if (now < existingOtp.resendAvailableAt) {
-        const secondsLeft = Math.ceil((existingOtp.resendAvailableAt - now) / 1000);
+
+      // Check cooldown (30 seconds)
+      if (now < new Date(data.resendAvailableAt)) {
+        const secondsLeft = Math.ceil((new Date(data.resendAvailableAt) - now) / 1000);
         return res.status(429).json({
           success: false,
           message: `Please wait ${secondsLeft} seconds before requesting a new code.`,
+        });
+      }
+
+      // Check max resend attempts (5 resend attempts max)
+      resendAttempts = data.resendAttempts || 0;
+      if (resendAttempts >= 5) {
+        return res.status(429).json({
+          success: false,
+          message: "Maximum verification resend attempts exceeded. Please try again later.",
         });
       }
     }
@@ -109,29 +133,32 @@ export const sendOtp = async (req, res) => {
     // GENERATE SECURE 6-DIGIT OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // SAVE OR UPDATE OTP IN DATABASE
+    // HASH OTP BEFORE STORAGE (Phase 3)
+    const salt = await bcrypt.genSalt(10);
+    const hashedOtp = await bcrypt.hash(otpCode, salt);
+
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes
     const resendAvailableAt = new Date(now.getTime() + 30 * 1000); // 30 seconds
 
-    if (existingOtp) {
-      existingOtp.otp = otpCode;
-      existingOtp.expiresAt = expiresAt;
-      existingOtp.resendAvailableAt = resendAvailableAt;
-      existingOtp.attempts = 0; // reset attempts
-      await existingOtp.save();
-    } else {
-      await Otp.create({
-        email: email.trim().toLowerCase(),
-        otp: otpCode,
-        expiresAt,
-        resendAvailableAt,
-        attempts: 0,
-      });
+    // Save/Update in Firestore
+    const otpDocData = {
+      otp: hashedOtp,
+      expiresAt: expiresAt.toISOString(),
+      resendAvailableAt: resendAvailableAt.toISOString(),
+      resendAttempts: resendAttempts + 1,
+      attempts: 0,
+      createdAt: now.toISOString(),
+    };
+
+    if (process.env.NODE_ENV !== "production") {
+      otpDocData.debugOtp = otpCode;
     }
 
+    await setDoc(otpDocRef, otpDocData);
+
     // SEND OTP EMAIL
-    await sendOtpEmail(email.trim().toLowerCase(), firstName, otpCode);
+    await sendOtpEmail(emailKey, firstName, otpCode);
 
     res.status(200).json({
       success: true,
@@ -146,10 +173,10 @@ export const sendOtp = async (req, res) => {
   }
 };
 
-// VERIFY OTP
+// VERIFY OTP (Atomic Account Creation)
 export const verifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { email, otp, registrationDetails } = req.body;
 
     if (!email || !otp) {
       return res.status(400).json({
@@ -158,17 +185,32 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    const otpDoc = await Otp.findOne({ email: email.trim().toLowerCase() });
-    if (!otpDoc) {
+    const emailKey = email.trim().toLowerCase();
+    const otpDocRef = doc(db, "otps", emailKey);
+
+    // Ensure backend is authenticated to read/write Firestore
+    if (!firebaseAuth.currentUser) {
+      try {
+        await signInAnonymously(firebaseAuth);
+      } catch (authErr) {
+        console.error("Failed to sign in anonymously on backend verifyOtp:", authErr);
+      }
+    }
+
+    const otpSnap = await getDoc(otpDocRef);
+
+    if (!otpSnap.exists()) {
       return res.status(400).json({
         success: false,
         message: "Verification code has expired or was not requested. Please try again.",
       });
     }
 
+    const data = otpSnap.data();
+
     // Manual expiry check (just in case TTL index hasn't run yet)
-    if (new Date() > otpDoc.expiresAt) {
-      await Otp.deleteOne({ _id: otpDoc._id });
+    if (new Date() > new Date(data.expiresAt)) {
+      await deleteDoc(otpDocRef);
       return res.status(400).json({
         success: false,
         message: "Verification code has expired. Please request a new one.",
@@ -176,51 +218,177 @@ export const verifyOtp = async (req, res) => {
     }
 
     // Increment attempts
-    otpDoc.attempts += 1;
-    await otpDoc.save();
+    const newAttempts = (data.attempts || 0) + 1;
+    await updateDoc(otpDocRef, { attempts: newAttempts });
 
-    // Check retry limit (max 5 attempts)
-    if (otpDoc.attempts > 5) {
-      await Otp.deleteOne({ _id: otpDoc._id });
+    // Check attempts limit (max 5 attempts)
+    if (newAttempts > 5) {
+      await deleteDoc(otpDocRef);
       return res.status(400).json({
         success: false,
         message: "Too many failed attempts. Please request a new verification code.",
       });
     }
 
-    // Verify OTP
-    if (otpDoc.otp !== otp.trim()) {
+    // Compare hashed OTP using bcrypt
+    const isMatch = await bcrypt.compare(otp.trim(), data.otp);
+    if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: `Invalid verification code. Attempts remaining: ${5 - otpDoc.attempts}`,
+        message: `Invalid verification code. Attempts remaining: ${5 - newAttempts}`,
       });
     }
 
-    // Correct OTP! Delete from database (one-time use)
-    await Otp.deleteOne({ _id: otpDoc._id });
+    // Correct OTP! Delete from Firestore (one-time use)
+    await deleteDoc(otpDocRef);
 
-    // Generate signed short-lived OTP token
-    const otpToken = jwt.sign(
-      { email: email.trim().toLowerCase(), otpVerified: true },
-      process.env.JWT_SECRET,
-      { expiresIn: "10m" }
-    );
+    // If no details provided, just return verification success (fallback path)
+    if (!registrationDetails) {
+      const otpToken = jwt.sign(
+        { email: emailKey, otpVerified: true },
+        process.env.JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+      return res.status(200).json({
+        success: true,
+        message: "Email verified successfully.",
+        otpToken,
+      });
+    }
 
-    res.status(200).json({
+    const {
+      firstName,
+      lastName,
+      phone,
+      city,
+      country,
+      additionalInfo,
+      password,
+      acceptedTerms,
+      termsVersion,
+    } = registrationDetails;
+
+    // Validate registration details
+    if (!firstName || !lastName || !phone || !city || !country || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing registration details.",
+      });
+    }
+
+    // Double check email uniqueness in MongoDB
+    const userExists = await User.findOne({ email: emailKey });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: "User already exists.",
+      });
+    }
+
+    // 1. Create Firebase Auth user
+    let firebaseUser;
+    try {
+      const userCredential = await createUserWithEmailAndPassword(firebaseAuth, emailKey, password);
+      firebaseUser = userCredential.user;
+    } catch (fbError) {
+      console.error("[verifyOtp] Firebase User creation failed:", fbError);
+      return res.status(400).json({
+        success: false,
+        message: fbError.message || "Failed to create Firebase Auth account.",
+      });
+    }
+
+    const uid = firebaseUser.uid;
+
+    // 2. Create Firestore User profile doc under users/{uid} (Phase 6 Sync)
+    try {
+      await setDoc(doc(db, "users", uid), {
+        uid,
+        firstName,
+        lastName,
+        email: emailKey,
+        phone,
+        city,
+        country,
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        provider: "email",
+      });
+    } catch (fsError) {
+      console.error("[verifyOtp] Firestore profile creation failed:", fsError);
+    }
+
+    // 3. Create MongoDB User profile
+    let user;
+    try {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      user = await User.create({
+        firstName,
+        lastName,
+        email: emailKey,
+        phone,
+        city,
+        country,
+        additionalInfo: additionalInfo || "",
+        password: hashedPassword,
+        acceptedTerms: true,
+        termsAcceptedAt: new Date(),
+        termsVersion: "2026-06",
+        firebaseUid: uid,
+      });
+
+      // Send welcome email (async)
+      try {
+        sendWelcomeEmail(user.email, user.firstName);
+      } catch (emailErr) {
+        console.error("Failed to send welcome email:", emailErr);
+      }
+    } catch (dbError) {
+      console.error("[verifyOtp] MongoDB profile creation failed:", dbError);
+      // Clean up Firebase Auth user to keep state in sync
+      try {
+        await firebaseUser.delete();
+      } catch (deleteError) {
+        console.error("Failed to delete Firebase user after MongoDB failure:", deleteError);
+      }
+      return res.status(500).json({
+        success: false,
+        message: dbError.message || "Failed to create database profile.",
+      });
+    }
+
+    // 4. Return success and start session
+    res.status(201).json({
       success: true,
-      message: "Email verified successfully.",
-      otpToken,
+      message: "User registered and verified successfully.",
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        city: user.city,
+        country: user.country,
+        acceptedTerms: user.acceptedTerms,
+        termsAcceptedAt: user.termsAcceptedAt,
+        termsVersion: user.termsVersion,
+        firebaseUid: user.firebaseUid,
+      },
+      token: generateToken(user._id),
     });
+
   } catch (error) {
-    console.error("[verifyOtp] Error:", error);
+    console.error("[verifyOtp] Unexpected error:", error);
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to verify code.",
+      message: error.message || "An unexpected error occurred during verification.",
     });
   }
 };
 
-// REGISTER USER
+// REGISTER USER (Fallback for token-based API test tools)
 export const registerUser = async (req, res) => {
   try {
     const {
@@ -312,6 +480,39 @@ export const registerUser = async (req, res) => {
       });
     }
 
+    // Create Firebase Auth user if not present
+    let uid = firebaseUid;
+    if (!uid) {
+      try {
+        const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email.trim().toLowerCase(), password);
+        uid = userCredential.user.uid;
+      } catch (fbErr) {
+        console.error("Firebase registration in /register failed:", fbErr);
+        return res.status(400).json({
+          success: false,
+          message: fbErr.message || "Failed to create Firebase Auth account.",
+        });
+      }
+    }
+
+    // Create Firestore user profile doc (Phase 6 Sync)
+    try {
+      await setDoc(doc(db, "users", uid), {
+        uid,
+        firstName,
+        lastName,
+        email: email.trim().toLowerCase(),
+        phone,
+        city,
+        country,
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        provider: "email",
+      });
+    } catch (fsErr) {
+      console.error("Firestore user creation in /register failed:", fsErr);
+    }
+
     // HASH PASSWORD
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
@@ -329,7 +530,7 @@ export const registerUser = async (req, res) => {
       acceptedTerms: true,
       termsAcceptedAt: new Date(),
       termsVersion: "2026-06",
-      firebaseUid: firebaseUid || "",
+      firebaseUid: uid,
     });
 
     // Send welcome email (async)
@@ -338,7 +539,6 @@ export const registerUser = async (req, res) => {
     } catch (emailErr) {
       console.error("Failed to send welcome email:", emailErr);
     }
-
 
     // RESPONSE
     res.status(201).json({
@@ -367,9 +567,6 @@ export const registerUser = async (req, res) => {
     });
   }
 };
-
-
-
 
 // LOGIN USER
 export const loginUser = async (req, res) => {
@@ -410,6 +607,19 @@ export const loginUser = async (req, res) => {
       user.firebaseUid = firebaseUid;
     }
     await user.save();
+
+    // Sync state to Firestore (Phase 6 Sync: lastLogin, deviceInfo, loginTime)
+    try {
+      const uid = user.firebaseUid || firebaseUid || user._id.toString();
+      const userDocRef = doc(db, "users", uid);
+      await setDoc(userDocRef, {
+        lastLogin: new Date().toISOString(),
+        deviceInfo: req.headers["user-agent"] || "unknown",
+        loginTime: new Date().toISOString(),
+      }, { merge: true });
+    } catch (fsErr) {
+      console.error("Firestore sync in /login failed:", fsErr);
+    }
 
     // SUCCESS
     res.status(200).json({

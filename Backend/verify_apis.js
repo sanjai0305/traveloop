@@ -1,12 +1,14 @@
 import assert from "assert";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import Otp from "./models/Otp.js";
+import { db, auth } from "./config/firebase.js";
+import { doc, getDoc } from "firebase/firestore";
+import { signInAnonymously } from "firebase/auth";
 
 const BASE_URL = "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
-const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.message}\x1b[0m`);
+const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.stack || error.message}\x1b[0m`);
 async function runTests() {
   console.log("=== TRAVELOOP PRODUCTION API TEST SUITE ===\n");
   dotenv.config();
@@ -41,11 +43,19 @@ async function runTests() {
     assert.strictEqual(sendOtpData.success, true, "Send OTP success should be true");
     logPass("Auth: Send Verification OTP");
 
-    // B. Query OTP from MongoDB
-    const otpRecord = await Otp.findOne({ email: testEmail });
-    assert.ok(otpRecord, "OTP document should exist in database");
-    assert.ok(otpRecord.otp, "OTP record should contain a code");
-    const testOtp = otpRecord.otp;
+    // B. Query OTP from Firestore
+    const otpDocRef = doc(db, "otps", testEmail.toLowerCase());
+    
+    // Authenticate anonymously before reading
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+    }
+    
+    const otpSnap = await getDoc(otpDocRef);
+    assert.ok(otpSnap.exists(), "OTP document should exist in Firestore");
+    const otpData = otpSnap.data();
+    assert.ok(otpData.debugOtp, "OTP record should contain a debugOtp code");
+    const testOtp = otpData.debugOtp;
     logPass(`Auth: DB Query OTP code (${testOtp})`);
 
     // C. Verify OTP to get token
