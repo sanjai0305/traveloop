@@ -21,6 +21,12 @@ import {
 import TermsModal from "./TermsModal";
 import Checkbox from "../common/Checkbox";
 
+const formatTime = (seconds) => {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+};
+
 const RegisterForm = ({ step, onStepChange }) => {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -78,6 +84,18 @@ const RegisterForm = ({ step, onStepChange }) => {
   useEffect(() => {
     if (formData.email && onStepChange) {
       onStepChange(step, formData.email);
+    }
+  }, [step]);
+
+  // Auto-focus first OTP box on entering Step 2
+  useEffect(() => {
+    if (step === 2) {
+      const timer = setTimeout(() => {
+        if (otpInputRefs.current[0]) {
+          otpInputRefs.current[0].focus();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [step]);
 
@@ -361,7 +379,7 @@ const RegisterForm = ({ step, onStepChange }) => {
   // RENDER STEP 1: BASIC INFORMATION
   if (step === 1) {
     return (
-      <form onSubmit={handleContinueToOtp} className="space-y-6 animate-slide-up">
+      <form onSubmit={handleContinueToOtp} className="space-y-4 animate-slide-up">
         {errors.general && (
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-650 font-semibold">
             {errors.general}
@@ -437,75 +455,87 @@ const RegisterForm = ({ step, onStepChange }) => {
   // RENDER STEP 2: EMAIL OTP VERIFICATION
   if (step === 2) {
     return (
-      <form onSubmit={handleVerifyOtp} className="space-y-6 animate-slide-up text-center">
-        {errors.general && (
-          <div className="rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 px-4 py-3 text-sm text-red-650 dark:text-red-400 font-semibold text-left">
-            {errors.general}
+      <form onSubmit={handleVerifyOtp} className="animate-slide-up w-full max-w-md mx-auto space-y-4">
+        {/* PREMIUM CARD CONTAINER */}
+        <div className="bg-slate-50/70 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800/80 rounded-[28px] p-5 sm:p-6 shadow-sm backdrop-blur-md space-y-5">
+          {/* COMPACT INLINE ALERT FOR ERRORS */}
+          {errors.general && (
+            <div className="flex items-center justify-center gap-2 text-rose-500 dark:text-rose-400 text-xs sm:text-sm font-bold py-2 px-3 bg-rose-50/50 dark:bg-rose-950/10 border border-rose-100/50 dark:border-rose-900/20 rounded-xl animate-shake">
+              <span>⚠️</span>
+              <span>{errors.general}</span>
+            </div>
+          )}
+
+          {/* 6 OTP BOXES */}
+          <div className="flex justify-center gap-2 sm:gap-3 direction-ltr py-1" onPaste={handleOtpPaste}>
+            {otp.map((digit, idx) => (
+              <input
+                key={idx}
+                ref={(el) => (otpInputRefs.current[idx] = el)}
+                type="text"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleOtpDigitChange(e, idx)}
+                onKeyDown={(e) => handleOtpKeyDown(e, idx)}
+                className="w-[42px] h-[50px] xs:w-[48px] xs:h-[56px] sm:w-[52px] sm:h-[60px] text-center text-xl sm:text-2xl font-bold bg-white dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700/80 rounded-2xl focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 focus:scale-[1.05] transition-all duration-200 shadow-sm"
+                disabled={loading}
+              />
+            ))}
           </div>
-        )}
 
-        {/* 6 OTP BOXES */}
-        <div className="flex justify-center gap-2 sm:gap-3 direction-ltr py-2" onPaste={handleOtpPaste}>
-          {otp.map((digit, idx) => (
-            <input
-              key={idx}
-              ref={(el) => (otpInputRefs.current[idx] = el)}
-              type="text"
-              maxLength={1}
-              value={digit}
-              onChange={(e) => handleOtpDigitChange(e, idx)}
-              onKeyDown={(e) => handleOtpKeyDown(e, idx)}
-              className="w-12 h-14 sm:w-14 sm:h-16 text-center text-xl sm:text-2xl font-bold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700/80 rounded-2xl focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-100 dark:focus:ring-teal-950/45 transition-all shadow-inner"
-              disabled={loading}
-            />
-          ))}
-        </div>
+          {/* INLINE TIMER & RESEND LINK */}
+          <div className="flex items-center justify-between text-xs sm:text-sm px-1 py-0.5 border-t border-slate-100 dark:border-slate-800/60 pt-3">
+            <span className="text-slate-500 dark:text-slate-400 font-medium">
+              {formatTime(resendTimer)} remaining
+            </span>
+            {isResendDisabled ? (
+              <span className="text-slate-400 dark:text-slate-650 font-semibold select-none cursor-not-allowed">
+                Resend Code
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={loading || resendCount >= 5}
+                className="text-teal-655 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-bold transition-colors hover:underline"
+              >
+                Resend Code
+              </button>
+            )}
+          </div>
 
-        <p className="text-xs text-slate-400">
-          Please check your spam or promotions folder if you don't see it in your inbox.
-        </p>
-
-        {/* BUTTON CONTAINER */}
-        <div className="space-y-3 pt-2">
+          {/* VERIFY BUTTON */}
           <Button
             type="submit"
             text="Verify OTP"
             loading={loading}
             icon={ShieldCheck}
+            className="w-full shadow-md hover:shadow-lg transition-all"
           />
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* BACK BUTTON */}
+          {/* TEXT ACTIONS AT BOTTOM */}
+          <div className="flex justify-between items-center px-1 pt-1 text-xs sm:text-sm">
             <button
               type="button"
               onClick={() => onStepChange(1)}
               disabled={loading}
-              className="flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] disabled:opacity-50"
+              className="text-slate-500 hover:text-teal-650 dark:text-slate-450 dark:hover:text-teal-350 font-bold transition-colors flex items-center gap-1.5 active:scale-95 duration-200"
             >
               <ArrowLeft size={16} />
-              Back
+              Change Details
             </button>
 
-            {/* RESEND BUTTON */}
-            <button
-              type="button"
-              onClick={handleResendOtp}
-              disabled={isResendDisabled || loading || resendCount >= 5}
-              className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-800 ${
-                isResendDisabled || resendCount >= 5
-                  ? "bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-650 cursor-not-allowed"
-                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98]"
-              }`}
-            >
-              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-              {resendCount >= 5
-                ? "Resend Limit Reached"
-                : isResendDisabled
-                ? `Resend in ${resendTimer}s`
-                : "Resend Code"}
-            </button>
+            {resendCount >= 5 && (
+              <span className="text-rose-500 dark:text-rose-400 font-bold text-xs">
+                Limit Exceeded
+              </span>
+            )}
           </div>
         </div>
+
+        <p className="text-xs text-slate-400 dark:text-slate-500 text-center px-4">
+          Please check your spam or promotions folder if you do not see the code in your inbox.
+        </p>
       </form>
     );
   }
@@ -513,7 +543,7 @@ const RegisterForm = ({ step, onStepChange }) => {
   // RENDER STEP 3: CREATE PASSWORD
   if (step === 3) {
     return (
-      <form onSubmit={handleCreateAccount} className="space-y-6 animate-slide-up">
+      <form onSubmit={handleCreateAccount} className="space-y-4 animate-slide-up">
         {errors.general && (
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-650 font-semibold">
             {errors.general}

@@ -28,7 +28,7 @@ const Button = ({
       hover:via-cyan-600
       hover:to-sky-600
       
-      shadow-[0_10px_30px_rgba(6,182,212,0.35)]
+      shadow-[0_8px_24px_rgba(20,184,181,0.25)]
     `,
 
     secondary: `
@@ -60,7 +60,8 @@ const Button = ({
         gap-3
         
         px-6
-        py-[14px]
+        h-14
+        md:h-[60px]
         
         rounded-2xl
         

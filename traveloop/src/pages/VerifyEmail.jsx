@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Mail, ArrowRight, ShieldCheck, RefreshCw } from "lucide-react";
+import { Mail, ArrowRight, ShieldCheck, RefreshCw, ArrowLeft } from "lucide-react";
 import AuthLayout from "../layouts/AuthLayout";
 import Button from "../components/common/Button";
 import { useAuth } from "../context/AuthContext";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { sendOtpCode, verifyOtpCode } from "../services/authService";
+
+const formatTime = (seconds) => {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+};
 
 const VerifyEmail = () => {
   const navigate = useNavigate();
@@ -33,6 +39,16 @@ const VerifyEmail = () => {
       navigate("/register", { replace: true });
     }
   }, [formData, navigate]);
+
+  // Auto-focus first OTP input on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inputRefs.current[0]) {
+        inputRefs.current[0].focus();
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Countdown timer logic
   useEffect(() => {
@@ -165,93 +181,127 @@ const VerifyEmail = () => {
 
   if (!formData) return null;
 
+  const maskedEmail = (() => {
+    if (!formData?.email) return "";
+    const [name, domain] = formData.email.split("@");
+    if (!domain) return formData.email;
+    if (name.length <= 2) return `${name[0]}*@${domain}`;
+    return `${name.substring(0, 2)}******${name.slice(-1)}@${domain}`;
+  })();
+
   return (
     <AuthLayout>
-      <div className="w-full max-w-md mx-auto pt-4 text-center">
+      <div className="w-full max-w-md mx-auto pt-4 text-center space-y-4">
         {/* ICON */}
-        <div className="flex justify-center mb-5">
-          <div className="w-16 h-16 rounded-full bg-teal-50 dark:bg-teal-950/35 border border-teal-100 dark:border-teal-900/40 flex items-center justify-center text-teal-500 animate-pulse">
-            <Mail size={28} />
+        <div className="flex justify-center mb-2">
+          <div className="w-12 h-12 rounded-full bg-teal-50 dark:bg-teal-950/35 border border-teal-100 dark:border-teal-900/40 flex items-center justify-center text-teal-500 animate-pulse">
+            <Mail size={24} />
           </div>
         </div>
 
         {/* TITLE */}
-        <h2 className="text-2xl font-extrabold text-slate-800 dark:text-white leading-tight">
+        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white leading-tight">
           Verify Your Email
         </h2>
 
         {/* SUBTITLE */}
-        <p className="mt-2 text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
-          We sent a verification code to:
+        <p className="mt-1 text-slate-500 dark:text-slate-400 text-xs sm:text-sm leading-relaxed px-4">
+          We sent a 6-digit verification code to:
           <br />
-          <span className="font-bold text-teal-600 dark:text-teal-400 break-all">
-            {formData.email}
+          <span className="font-bold text-teal-650 dark:text-teal-400 break-all">
+            {maskedEmail}
           </span>
         </p>
 
         {/* FORM */}
-        <form onSubmit={handleVerify} className="mt-8 space-y-6">
-          {/* GENERAL ERROR */}
-          {error && (
-            <div className="rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 px-4 py-3 text-xs md:text-sm text-red-600 dark:text-red-400 font-semibold text-left">
-              {error}
+        <form onSubmit={handleVerify} className="animate-slide-up w-full max-w-md mx-auto space-y-4 pt-2">
+          {/* PREMIUM CARD CONTAINER */}
+          <div className="bg-slate-50/70 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800/80 rounded-[28px] p-5 sm:p-6 shadow-sm backdrop-blur-md space-y-5">
+            {/* COMPACT INLINE ALERT FOR ERRORS / SUCCESS */}
+            {error && (
+              <div className="flex items-center justify-center gap-2 text-rose-500 dark:text-rose-400 text-xs sm:text-sm font-bold py-2 px-3 bg-rose-50/50 dark:bg-rose-950/10 border border-rose-100/50 dark:border-rose-900/20 rounded-xl animate-shake">
+                <span>⚠️</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            {success && (
+              <div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs sm:text-sm font-bold py-2 px-3 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100/50 dark:border-emerald-900/20 rounded-xl">
+                <span>✓</span>
+                <span>{success}</span>
+              </div>
+            )}
+
+            {/* 6 OTP BOXES */}
+            <div className="flex justify-center gap-2 sm:gap-3 direction-ltr py-1" onPaste={handlePaste}>
+              {otp.map((digit, idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => (inputRefs.current[idx] = el)}
+                  type="text"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleChange(e, idx)}
+                  onKeyDown={(e) => handleKeyDown(e, idx)}
+                  className="w-[42px] h-[50px] xs:w-[48px] xs:h-[56px] sm:w-[52px] sm:h-[60px] text-center text-xl sm:text-2xl font-bold bg-white dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700/80 rounded-2xl focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 focus:scale-[1.05] transition-all duration-200 shadow-sm"
+                  disabled={loading}
+                />
+              ))}
             </div>
-          )}
 
-          {/* GENERAL SUCCESS */}
-          {success && (
-            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 px-4 py-3 text-xs md:text-sm text-emerald-600 dark:text-emerald-400 font-semibold text-left">
-              {success}
+            {/* INLINE TIMER & RESEND LINK */}
+            <div className="flex items-center justify-between text-xs sm:text-sm px-1 py-0.5 border-t border-slate-100 dark:border-slate-800/60 pt-3">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">
+                {formatTime(resendTimer)} remaining
+              </span>
+              {isResendDisabled ? (
+                <span className="text-slate-400 dark:text-slate-650 font-semibold select-none cursor-not-allowed">
+                  Resend Code
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={loading || resendCount >= 5}
+                  className="text-teal-650 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-bold transition-colors hover:underline"
+                >
+                  Resend Code
+                </button>
+              )}
             </div>
-          )}
 
-          {/* OTP INPUT BOXES */}
-          <div className="flex justify-center gap-2 sm:gap-3 direction-ltr" onPaste={handlePaste}>
-            {otp.map((digit, idx) => (
-              <input
-                key={idx}
-                ref={(el) => (inputRefs.current[idx] = el)}
-                type="text"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => handleChange(e, idx)}
-                onKeyDown={(e) => handleKeyDown(e, idx)}
-                className="w-12 h-14 sm:w-14 sm:h-16 text-center text-xl sm:text-2xl font-bold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700/80 rounded-2xl focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-100 dark:focus:ring-teal-950/45 transition-all shadow-inner"
-              />
-            ))}
-          </div>
-
-          <p className="text-xs text-slate-400">
-            Please check your spam or promotions folder if you don't see it in your inbox.
-          </p>
-
-          {/* BUTTONS */}
-          <div className="space-y-3 pt-2">
+            {/* VERIFY BUTTON */}
             <Button
               type="submit"
               text="Verify OTP"
               loading={loading}
               icon={ShieldCheck}
+              className="w-full shadow-md hover:shadow-lg transition-all"
             />
 
-            <button
-              type="button"
-              onClick={handleResend}
-              disabled={isResendDisabled || loading || resendCount >= 5}
-              className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-800 ${
-                (isResendDisabled || resendCount >= 5)
-                  ? "bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-600 cursor-not-allowed"
-                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-750 active:scale-[0.98]"
-              }`}
-            >
-              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-              {resendCount >= 5
-                ? "Resend Limit Reached"
-                : isResendDisabled
-                ? `Resend in ${resendTimer}s`
-                : "Resend Code"}
-            </button>
+            {/* TEXT ACTIONS AT BOTTOM */}
+            <div className="flex justify-between items-center px-1 pt-1 text-xs sm:text-sm">
+              <button
+                type="button"
+                onClick={() => navigate("/register")}
+                disabled={loading}
+                className="text-slate-500 hover:text-teal-650 dark:text-slate-450 dark:hover:text-teal-350 font-bold transition-colors flex items-center gap-1.5 active:scale-95 duration-200"
+              >
+                <ArrowLeft size={16} />
+                Back to Register
+              </button>
+
+              {resendCount >= 5 && (
+                <span className="text-rose-500 dark:text-rose-400 font-bold text-xs">
+                  Limit Exceeded
+                </span>
+              )}
+            </div>
           </div>
+
+          <p className="text-xs text-slate-400 dark:text-slate-500 text-center px-4">
+            Please check your spam or promotions folder if you do not see the code in your inbox.
+          </p>
         </form>
       </div>
     </AuthLayout>

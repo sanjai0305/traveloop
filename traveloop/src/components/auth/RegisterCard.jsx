@@ -1,6 +1,6 @@
 // src/components/auth/RegisterCard.jsx
 
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 
 // COMPONENTS
@@ -58,13 +58,16 @@ const RegisterCard = () => {
         w-full
         max-w-5xl
         
-        px-8
+        px-4
+        sm:px-8
         md:px-12
         
-        py-10
+        py-6
+        sm:py-10
         md:py-12
         
-        rounded-[40px]
+        rounded-3xl
+        sm:rounded-[40px]
         
         bg-white/85
         backdrop-blur-2xl
@@ -123,7 +126,7 @@ const RegisterCard = () => {
         </div>
 
         {/* LUGGAGE IMAGE */}
-        <div className="flex justify-center mt-8">
+        <div className="flex justify-center mt-4 sm:mt-8">
           <div
             className="
               relative
@@ -132,8 +135,10 @@ const RegisterCard = () => {
               items-center
               justify-center
               
-              w-36
-              h-36
+              w-24
+              h-24
+              sm:w-36
+              sm:h-36
               
               rounded-full
               
@@ -168,8 +173,10 @@ const RegisterCard = () => {
               src={Luggage}
               alt="Travel"
               className="
-                w-24
-                h-24
+                w-16
+                h-16
+                sm:w-24
+                sm:h-24
                 object-contain
                 relative
                 z-10
@@ -180,7 +187,7 @@ const RegisterCard = () => {
         </div>
 
         {/* HEADING */}
-        <div className="text-center mt-6">
+        <div className="text-center mt-4 sm:mt-6">
           
           <h2
             className="
@@ -212,8 +219,16 @@ const RegisterCard = () => {
           >
             {step === 2 ? (
               <>
-                We sent a verification code to:{" "}
-                <span className="font-bold text-teal-600 dark:text-teal-400 break-all">{email}</span>
+                We sent a 6-digit verification code to:{" "}
+                <span className="font-bold text-teal-600 dark:text-teal-400 break-all">
+                  {(() => {
+                    if (!email) return "";
+                    const [name, domain] = email.split("@");
+                    if (!domain) return email;
+                    if (name.length <= 2) return `${name[0]}*@${domain}`;
+                    return `${name.substring(0, 2)}******${name.slice(-1)}@${domain}`;
+                  })()}
+                </span>
               </>
             ) : (
               stepSubtitle

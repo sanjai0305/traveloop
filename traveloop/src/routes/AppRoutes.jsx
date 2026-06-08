@@ -80,16 +80,23 @@ const AppRoutes = () => {
               element={<Login />}
             />
 
-          {/* REGISTER */}
+          {/* REGISTER - UNIFIED WIZARD (Handles all 3 steps internally) */}
           <Route
             path="/register"
             element={<Register />}
           />
 
-          {/* VERIFY EMAIL */}
-          <Route
+          {/* VERIFY EMAIL - DEPRECATED (Use /register instead - now unified) */}
+          {/* Route commented out: VerifyEmail is now part of RegistrationWizard */}
+          {/* <Route
             path="/verify-email"
             element={<VerifyEmail />}
+          /> */}
+
+          {/* REDIRECT /verify-email to /register for backward compatibility */}
+          <Route
+            path="/verify-email"
+            element={<Navigate to="/register" replace />}
           />
 
           {/* FORGOT PASSWORD */}

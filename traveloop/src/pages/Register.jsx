@@ -1,19 +1,18 @@
 // src/pages/Register.jsx
 
+import React from "react";
 
 // LAYOUT
 import AuthLayout from "../layouts/AuthLayout";
 
 // COMPONENTS
-import RegisterCard from "../components/auth/RegisterCard";
+import RegistrationWizard from "../components/auth/RegistrationWizard";
 
 const Register = () => {
   return (
     <AuthLayout>
-      
-      {/* REGISTER CARD */}
-      <RegisterCard />
-
+      {/* UNIFIED REGISTRATION WIZARD - STABLE & PERFORMANT */}
+      <RegistrationWizard />
     </AuthLayout>
   );
 };

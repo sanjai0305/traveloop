@@ -27,7 +27,7 @@ const InputField = ({
         <label
           className="
             block
-            mb-1.5
+            mb-1
             
             text-xs
             md:text-sm
@@ -53,7 +53,8 @@ const InputField = ({
           gap-3
           
           px-4
-          py-3
+          h-14
+          md:h-[60px]
           
           rounded-2xl
           

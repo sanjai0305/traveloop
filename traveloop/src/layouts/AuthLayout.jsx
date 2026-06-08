@@ -1,6 +1,6 @@
 // src/layouts/AuthLayout.jsx
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Plane, MapPin, Star } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -8,27 +8,73 @@ import { motion } from "framer-motion";
 import LoginBg from "../assets/images/login-bg.jpg";
 
 const AuthLayout = ({ children }) => {
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MOBILE KEYBOARD VISIBILITY DETECTION
+  // Prevents layout shifts when keyboard opens/closes
+  // ─────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const handleResize = () => {
+      // On mobile, when keyboard is open, viewport height reduces
+      const windowHeight = window.innerHeight;
+      const screenHeight = window.screen.height;
+      const estimatedKeyboardHeight = Math.max(0, screenHeight - windowHeight);
+
+      if (estimatedKeyboardHeight > 100) {
+        // Keyboard is likely open
+        setIsKeyboardVisible(true);
+        setKeyboardHeight(estimatedKeyboardHeight);
+      } else {
+        // Keyboard is likely closed
+        setIsKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    
+    // Check initial state
+    handleResize();
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   return (
     <div
       className="min-h-screen relative overflow-hidden bg-slate-900 flex flex-col"
-      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      style={{
+        paddingTop: "env(safe-area-inset-top, 0px)",
+        // Prevent layout shift when keyboard appears
+        transition: isKeyboardVisible ? "none" : "all 0.3s ease-out",
+        height: "100dvh", // Use dynamic viewport height
+      }}
     >
-      {/* ── HERO IMAGE SECTION ── */}
-      <div className="relative w-full h-[42vh] min-h-[280px] flex-shrink-0 overflow-hidden">
+      {/* ── HERO IMAGE SECTION (COLLAPSIBLE ON MOBILE WITH KEYBOARD) ── */}
+      <div
+        className="relative w-full flex-shrink-0 overflow-hidden transition-all duration-300"
+        style={{
+          height: isKeyboardVisible ? "140px" : "42vh",
+          minHeight: isKeyboardVisible ? "140px" : "280px",
+        }}
+      >
         <img src={LoginBg} alt="Travel Background" className="absolute inset-0 w-full h-full object-cover" />
 
         {/* Gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/30 via-slate-900/40 to-slate-900/85" />
 
         {/* Glow blobs */}
-        <div className="absolute top-6 right-6 w-32 h-32 rounded-full blur-3xl" style={{ background: "rgba(20,184,181,0.25)" }} />
-        <div className="absolute bottom-0 left-8 w-40 h-32 rounded-full blur-3xl" style={{ background: "rgba(20,184,181,0.20)" }} />
+        <div className="absolute top-6 right-6 w-32 h-32 rounded-full blur-3xl opacity-75 transition-opacity duration-300" style={{ background: "rgba(20,184,181,0.25)", display: isKeyboardVisible ? "none" : "block" }} />
+        <div className="absolute bottom-0 left-8 w-40 h-32 rounded-full blur-3xl opacity-75 transition-opacity duration-300" style={{ background: "rgba(20,184,181,0.20)", display: isKeyboardVisible ? "none" : "block" }} />
 
         {/* Floating plane icon */}
         <motion.div
           animate={{ y: [-4, 4, -4] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
           className="absolute top-8 right-8 flex items-center justify-center w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20"
+          style={{ display: isKeyboardVisible ? "none" : "flex" }}
         >
           <Plane size={24} className="text-white rotate-12" />
         </motion.div>
@@ -39,6 +85,7 @@ const AuthLayout = ({ children }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           className="absolute bottom-8 left-6 right-6"
+          style={{ display: isKeyboardVisible ? "none" : "block" }}
         >
           <div className="flex items-center gap-2 mb-3">
             <div
@@ -76,11 +123,15 @@ const AuthLayout = ({ children }) => {
         initial={{ y: 40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }}
-        className="flex-1 relative -mt-6 bg-white rounded-t-[28px] shadow-xl overflow-y-auto"
-        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 24px)" }}
+        className="flex-1 relative -mt-6 bg-white dark:bg-slate-900 rounded-t-[28px] shadow-xl overflow-y-auto"
+        style={{
+          paddingBottom: "max(env(safe-area-inset-bottom), 24px)",
+          // Use -webkit-overflow-scrolling for smooth scrolling on iOS
+          WebkitOverflowScrolling: "touch",
+        }}
       >
         <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-slate-200" />
+          <div className="w-10 h-1 rounded-full bg-slate-200 dark:bg-slate-700" />
         </div>
         <div className="px-6 pt-2 pb-8">
           {children}
