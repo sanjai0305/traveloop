@@ -5,7 +5,7 @@ import { db, auth } from "./config/firebase.js";
 import { doc, getDoc } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "https://traveloop-751k.vercel.app/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
 const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.stack || error.message}\x1b[0m`);

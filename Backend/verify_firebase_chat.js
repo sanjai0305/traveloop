@@ -168,7 +168,7 @@ async function testFirebaseChat() {
 
     // 5. Verify Backend Notification Cooldown
     console.log("\n=== VERIFYING BACKEND NOTIFICATION COOLDOWN BRIDGE ===\n");
-    const BASE_URL = "http://localhost:5000/api";
+    const BASE_URL = "https://traveloop-751k.vercel.app/api";
 
     const emailOwner = `owner_${Date.now()}@example.com`;
     const emailCollab = `collab_${Date.now()}@example.com`;

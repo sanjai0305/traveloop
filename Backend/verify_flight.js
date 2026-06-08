@@ -8,7 +8,7 @@ import Notification from "./models/Notification.js";
 
 dotenv.config();
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "https://traveloop-751k.vercel.app/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
 const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.message}\x1b[0m`);
