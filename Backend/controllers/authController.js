@@ -37,24 +37,12 @@ export const sendOtp = async (req, res) => {
       lastName,
       email,
       phone,
-      city,
-      country,
-      password,
-      acceptedTerms,
-      termsVersion,
     } = req.body;
 
-    if (!firstName || !lastName || !email || !phone || !city || !country || !password) {
+    if (!firstName || !lastName || !email || !phone) {
       return res.status(400).json({
         success: false,
-        message: "All registration fields (firstName, lastName, email, phone, city, country, password) are required.",
-      });
-    }
-
-    if (acceptedTerms !== true || termsVersion !== "2026-06") {
-      return res.status(400).json({
-        success: false,
-        message: "You must accept the Terms & Conditions and Privacy Policy to register.",
+        message: "First Name, Last Name, Email, and Phone are required.",
       });
     }
 
@@ -69,14 +57,6 @@ export const sendOtp = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid phone number (7-15 digits, numeric).",
-      });
-    }
-
-    const pwdStrength = isStrongPassword(password);
-    if (!pwdStrength.valid) {
-      return res.status(400).json({
-        success: false,
-        message: pwdStrength.message,
       });
     }
 
@@ -406,10 +386,10 @@ export const registerUser = async (req, res) => {
       otpToken,
     } = req.body;
 
-    if (!firstName || !lastName || !email || !phone || !city || !country || !password) {
+    if (!firstName || !lastName || !email || !phone || !password) {
       return res.status(400).json({
         success: false,
-        message: "All registration fields (firstName, lastName, email, phone, city, country, password) are required for email accounts",
+        message: "All registration fields (firstName, lastName, email, phone, password) are required for email accounts",
       });
     }
 
@@ -503,8 +483,8 @@ export const registerUser = async (req, res) => {
         lastName,
         email: email.trim().toLowerCase(),
         phone,
-        city,
-        country,
+        city: city || "",
+        country: country || "",
         createdAt: new Date().toISOString(),
         lastLogin: new Date().toISOString(),
         provider: "email",
@@ -523,8 +503,8 @@ export const registerUser = async (req, res) => {
       lastName,
       email: email.trim().toLowerCase(),
       phone,
-      city,
-      country,
+      city: city || "",
+      country: country || "",
       additionalInfo,
       password: hashedPassword,
       acceptedTerms: true,

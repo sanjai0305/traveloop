@@ -11,6 +11,45 @@ import RegisterForm from "./RegisterForm";
 import Luggage from "../../assets/images/luggage.png";
 
 const RegisterCard = () => {
+  const [step, setStep] = useState(() => {
+    try {
+      const savedStep = sessionStorage.getItem("traveloop_register_step");
+      return savedStep ? parseInt(savedStep, 10) : 1;
+    } catch (e) {
+      return 1;
+    }
+  });
+
+  const [email, setEmail] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem("traveloop_register_form");
+      if (cached) {
+        return JSON.parse(cached).email || "";
+      }
+    } catch (e) {}
+    return "";
+  });
+
+  const handleStepChange = (newStep, userEmail) => {
+    setStep(newStep);
+    try {
+      sessionStorage.setItem("traveloop_register_step", newStep.toString());
+    } catch (e) {}
+    if (userEmail) {
+      setEmail(userEmail);
+    }
+  };
+
+  let stepTitle = "Create Your Account";
+  let stepSubtitle = "Join Traveloop and start planning your adventures around the world.";
+
+  if (step === 2) {
+    stepTitle = "Verify Your Email";
+  } else if (step === 3) {
+    stepTitle = "Secure Your Account";
+    stepSubtitle = "Create a strong password to protect your account.";
+  }
+
   return (
     <div
       className="
@@ -156,7 +195,7 @@ const RegisterCard = () => {
               leading-tight
             "
           >
-            Create Your Account
+            {stepTitle}
           </h2>
 
           <p
@@ -171,47 +210,55 @@ const RegisterCard = () => {
               leading-6
             "
           >
-            Join Traveloop and start planning
-            your adventures around the world.
+            {step === 2 ? (
+              <>
+                We sent a verification code to:{" "}
+                <span className="font-bold text-teal-600 dark:text-teal-400 break-all">{email}</span>
+              </>
+            ) : (
+              stepSubtitle
+            )}
           </p>
         </div>
 
         {/* FORM */}
         <div className="mt-6">
-          <RegisterForm />
+          <RegisterForm step={step} onStepChange={handleStepChange} />
         </div>
 
         {/* FOOTER */}
         <div className="mt-8 text-center flex flex-col items-center gap-4">
-          <p
-            className="
-              text-slate-500
-              text-sm
-              md:text-base
-            "
-          >
-            Already have an account?{" "}
-            
-            <Link
-              to="/"
+          {step === 1 && (
+            <p
               className="
-                font-bold
-                
-                bg-gradient-to-r
-                from-teal-600
-                to-cyan-500
-                
-                bg-clip-text
-                text-transparent
-                
-                hover:opacity-80
-                
-                transition
+                text-slate-500
+                text-sm
+                md:text-base
               "
             >
-              Login
-            </Link>
-          </p>
+              Already have an account?{" "}
+              
+              <Link
+                to="/"
+                className="
+                  font-bold
+                  
+                  bg-gradient-to-r
+                  from-teal-600
+                  to-cyan-500
+                  
+                  bg-clip-text
+                  text-transparent
+                  
+                  hover:opacity-80
+                  
+                  transition
+                "
+              >
+                Login
+              </Link>
+            </p>
+          )}
 
           {/* TERMS & PRIVACY LINKS FOOTER */}
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800/60 flex justify-center gap-4 text-xs font-bold text-slate-400 w-full max-w-xs">

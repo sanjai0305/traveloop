@@ -99,7 +99,7 @@ const TermsModal = ({ isOpen, onClose, onAccept, section = "terms" }) => {
                 onClick={onClose}
                 className="w-full sm:w-auto order-2 sm:order-1 px-5 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-350 font-bold text-sm rounded-xl active:scale-[0.97] transition-all"
               >
-                I Understand
+                Close
               </button>
               
               {onAccept && (

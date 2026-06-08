@@ -1,22 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   User,
   Mail,
   Lock,
   Phone,
-  MapPin,
-  Globe,
   ShieldCheck,
+  ArrowRight,
+  ArrowLeft,
+  RefreshCw,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import InputField from "../common/InputField";
 import Button from "../common/Button";
 import { useAuth } from "../../context/AuthContext";
-import { sendOtpCode } from "../../services/authService";
+import {
+  sendOtpCode,
+  verifyOtpCode,
+  registerWithEmailPassword,
+} from "../../services/authService";
 import TermsModal from "./TermsModal";
 import Checkbox from "../common/Checkbox";
 
-const RegisterForm = () => {
+const RegisterForm = ({ step, onStepChange }) => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -31,9 +36,9 @@ const RegisterForm = () => {
           lastName: parsed.lastName || "",
           email: parsed.email || "",
           phone: parsed.phone || "",
-          city: parsed.city || "",
-          country: parsed.country || "India",
           password: "",
+          confirmPassword: "",
+          otpToken: parsed.otpToken || "",
         };
       }
     } catch (e) {
@@ -44,24 +49,52 @@ const RegisterForm = () => {
       lastName: "",
       email: "",
       phone: "",
-      city: "",
-      country: "India",
       password: "",
+      confirmPassword: "",
+      otpToken: "",
     };
   });
 
+  const [otp, setOtp] = useState(new Array(6).fill(""));
   const [agree, setAgree] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [termsModal, setTermsModal] = useState({ open: false, section: "terms" });
 
+  // Timer for Resend OTP (30 seconds cooldown)
+  const [resendTimer, setResendTimer] = useState(30);
+  const [isResendDisabled, setIsResendDisabled] = useState(true);
+  const [resendCount, setResendCount] = useState(1);
+
+  const otpInputRefs = useRef([]);
+
+  // Auto-save form progress (excluding password/confirmPassword for security)
   useEffect(() => {
-    // Save to sessionStorage (excluding password for security)
-    const { password, ...rest } = formData;
+    const { password, confirmPassword, ...rest } = formData;
     sessionStorage.setItem("traveloop_register_form", JSON.stringify(rest));
   }, [formData]);
 
-  // HANDLE CHANGE
+  // Sync email to parent card title
+  useEffect(() => {
+    if (formData.email && onStepChange) {
+      onStepChange(step, formData.email);
+    }
+  }, [step]);
+
+  // Countdown timer logic for OTP step
+  useEffect(() => {
+    let interval = null;
+    if (step === 2 && resendTimer > 0) {
+      interval = setInterval(() => {
+        setResendTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (resendTimer === 0) {
+      setIsResendDisabled(false);
+    }
+    return () => clearInterval(interval);
+  }, [resendTimer, step]);
+
+  // HANDLE FORM CHANGE
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -75,6 +108,7 @@ const RegisterForm = () => {
     }));
   };
 
+  // PASSWORD STRENGTH CHECKER
   const getPasswordStrength = (pwd) => {
     if (!pwd) return { score: 0, label: "", color: "", text: "" };
     let score = 0;
@@ -90,8 +124,8 @@ const RegisterForm = () => {
 
   const strength = getPasswordStrength(formData.password);
 
-  // VALIDATION
-  const validateForm = () => {
+  // STEP 1 VALIDATION (BASIC INFORMATION)
+  const validateStep1 = () => {
     let newErrors = {};
 
     if (!formData.firstName.trim()) {
@@ -121,13 +155,13 @@ const RegisterForm = () => {
       }
     }
 
-    if (!formData.city.trim()) {
-      newErrors.city = "City is required";
-    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
-    if (!formData.country.trim()) {
-      newErrors.country = "Country is required";
-    }
+  // STEP 3 VALIDATION (CREATE PASSWORD)
+  const validateStep3 = () => {
+    let newErrors = {};
 
     if (!formData.password.trim()) {
       newErrors.password = "Password is required";
@@ -138,233 +172,484 @@ const RegisterForm = () => {
       }
     }
 
+    if (!formData.confirmPassword.trim()) {
+      newErrors.confirmPassword = "Please confirm your password";
+    } else if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+    }
+
     if (!agree) {
-      newErrors.agree = "You must agree to the Terms & Conditions and Privacy Policy";
+      newErrors.agree = "Please accept the Terms & Conditions to continue.";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // REGISTER & SEND OTP
-  const handleSubmit = async (e) => {
+  // TRIGGER CONTINUE (STEP 1 -> STEP 2)
+  const handleContinueToOtp = async (e) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (!validateStep1()) return;
 
     setLoading(true);
+    setErrors({});
     try {
+      // Validate email uniqueness and trigger OTP send
       await sendOtpCode({
-        ...formData,
-        acceptedTerms: agree,
-        termsVersion: "2026-06",
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
       });
 
-      // Navigate to verification screen, passing full registration details in state
-      navigate("/verify-email", {
-        state: {
-          formData: {
-            ...formData,
-            acceptedTerms: agree,
-            termsVersion: "2026-06",
-          },
-        },
-      });
-    } catch (error) {
-      console.error("[RegisterForm] OTP send error:", error);
-      setErrors({ general: error.message || "Failed to send verification code. Please try again." });
+      // Clear code box state, reset resend timer and count
+      setOtp(new Array(6).fill(""));
+      setResendTimer(30);
+      setIsResendDisabled(true);
+
+      // Move to Step 2
+      onStepChange(2, formData.email);
+    } catch (err) {
+      console.error("[RegisterForm] send-otp failed:", err);
+      setErrors({ general: err.message || "Failed to send verification code. Please try again." });
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* GENERAL ERROR */}
-      {errors.general && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600 font-medium">
-          {errors.general}
-        </div>
-      )}
+  // OTP DIGIT CHANGE HANDLER (STEP 2)
+  const handleOtpDigitChange = (e, index) => {
+    const value = e.target.value;
+    if (isNaN(value)) return;
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <InputField
-          label="First Name"
-          type="text"
-          name="firstName"
-          placeholder="Enter your first name"
-          icon={User}
-          value={formData.firstName}
-          onChange={handleChange}
-          error={errors.firstName}
-          required
-        />
+    const newOtp = [...otp];
+    newOtp[index] = value.substring(value.length - 1);
+    setOtp(newOtp);
+    setErrors({});
 
-        <InputField
-          label="Last Name"
-          type="text"
-          name="lastName"
-          placeholder="Enter your last name"
-          icon={User}
-          value={formData.lastName}
-          onChange={handleChange}
-          error={errors.lastName}
-          required
-        />
-      </div>
+    // Auto-focus next input box
+    if (value && index < 5) {
+      otpInputRefs.current[index + 1].focus();
+    }
+  };
 
-      <InputField
-        label="Email Address"
-        type="email"
-        name="email"
-        placeholder="Enter your email address"
-        icon={Mail}
-        value={formData.email}
-        onChange={handleChange}
-        error={errors.email}
-        required
-      />
+  // OTP DIGIT BACKSPACE/KEYDOWN (STEP 2)
+  const handleOtpKeyDown = (e, index) => {
+    if (e.key === "Backspace") {
+      const newOtp = [...otp];
+      if (!otp[index] && index > 0) {
+        newOtp[index - 1] = "";
+        setOtp(newOtp);
+        otpInputRefs.current[index - 1].focus();
+      } else {
+        newOtp[index] = "";
+        setOtp(newOtp);
+      }
+      setErrors({});
+    }
+  };
 
-      <InputField
-        label="Phone Number"
-        type="text"
-        name="phone"
-        placeholder="Enter your phone number"
-        icon={Phone}
-        value={formData.phone}
-        onChange={handleChange}
-        error={errors.phone}
-        required
-      />
+  // OTP DIGIT PASTE HANDLER (STEP 2)
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+    const data = e.clipboardData.getData("text").trim();
+    if (data.length === 6 && /^\d+$/.test(data)) {
+      const pasteOtp = data.split("");
+      setOtp(pasteOtp);
+      otpInputRefs.current[5].focus();
+      setErrors({});
+    }
+  };
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <InputField
-          label="City"
-          type="text"
-          name="city"
-          placeholder="Enter your city"
-          icon={MapPin}
-          value={formData.city}
-          onChange={handleChange}
-          error={errors.city}
-          required
-        />
+  // OTP CODE RESEND HANDLER (STEP 2)
+  const handleResendOtp = async () => {
+    if (isResendDisabled || loading || resendCount >= 5) return;
 
-        <InputField
-          label="Country"
-          type="text"
-          name="country"
-          placeholder="Enter your country"
-          icon={Globe}
-          value={formData.country}
-          onChange={handleChange}
-          error={errors.country}
-          required
-        />
-      </div>
+    setLoading(true);
+    setErrors({});
+    try {
+      await sendOtpCode({
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
+      });
 
-      <div className="relative">
-        <InputField
-          label="Password"
-          type="password"
-          name="password"
-          placeholder="Enter your password"
-          icon={Lock}
-          value={formData.password}
-          onChange={handleChange}
-          error={errors.password}
-          required
-        />
+      setOtp(new Array(6).fill(""));
+      setResendTimer(30);
+      setIsResendDisabled(true);
+      setResendCount((prev) => prev + 1);
 
-        {/* PASSWORD STRENGTH VISUAL FEEDBACK */}
-        {formData.password && (
-          <div className="mt-1.5 space-y-1 animate-fade-in">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-400 font-medium">Password Strength:</span>
-              <span className={`font-bold transition-colors duration-300 ${strength.text}`}>
-                {strength.label}
-              </span>
-            </div>
-            <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex gap-1">
-              {[1, 2, 3, 4].map((step) => (
-                <div
-                  key={step}
-                  className={`h-full flex-1 transition-all duration-500 ${
-                    step <= strength.score ? strength.color : "bg-slate-200 dark:bg-slate-700"
-                  }`}
-                />
-              ))}
-            </div>
-            {strength.score < 4 && (
-              <ul className="text-[11px] text-slate-400 space-y-0.5 mt-0.5 list-disc pl-4">
-                <li className={formData.password.length >= 8 ? "text-teal-600 font-semibold" : ""}>
-                  At least 8 characters
-                </li>
-                <li className={/[A-Z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
-                  At least one uppercase letter
-                </li>
-                <li className={/[a-z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
-                  At least one lowercase letter
-                </li>
-                <li className={/[0-9]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
-                  At least one number
-                </li>
-              </ul>
-            )}
+      if (otpInputRefs.current[0]) {
+        otpInputRefs.current[0].focus();
+      }
+    } catch (err) {
+      setErrors({ general: err.message || "Failed to resend verification code." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // VERIFY OTP (STEP 2 -> STEP 3)
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    const otpCode = otp.join("");
+
+    if (otpCode.length < 6) {
+      setErrors({ general: "Please enter all 6 digits of the verification code." });
+      return;
+    }
+
+    setLoading(true);
+    setErrors({});
+    try {
+      const verifyRes = await verifyOtpCode(formData.email, otpCode);
+      const { otpToken } = verifyRes;
+
+      // Save token in memory/sessionState
+      setFormData((prev) => ({ ...prev, otpToken }));
+      
+      // Clear errors and transition to Step 3
+      onStepChange(3);
+    } catch (err) {
+      console.error("[RegisterForm] verify-otp failed:", err);
+      setErrors({ general: err.message || "Invalid verification code. Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // FINAL USER CREATION & LOGIN (STEP 3)
+  const handleCreateAccount = async (e) => {
+    e.preventDefault();
+    if (!validateStep3()) return;
+
+    setLoading(true);
+    setErrors({});
+    try {
+      // Complete Firebase registration, Backend synchronization, and Firestore profile creation
+      const backendData = await registerWithEmailPassword(
+        {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          password: formData.password,
+          acceptedTerms: agree,
+          termsVersion: "2026-06",
+        },
+        formData.otpToken
+      );
+
+      // Clean up onboarding cache from session storage
+      sessionStorage.removeItem("traveloop_register_form");
+      sessionStorage.removeItem("traveloop_register_step");
+
+      // Auto login in the app session state
+      login(backendData.user, backendData.token);
+
+      // Navigate to dashboard
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      console.error("[RegisterForm] registration failed:", err);
+      setErrors({ general: err.message || "Failed to create account. Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // RENDER STEP 1: BASIC INFORMATION
+  if (step === 1) {
+    return (
+      <form onSubmit={handleContinueToOtp} className="space-y-6 animate-slide-up">
+        {errors.general && (
+          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-650 font-semibold">
+            {errors.general}
           </div>
         )}
-      </div>
 
-      {/* TERMS & CONDITIONS CHECKBOX */}
-      <Checkbox
-        id="agree-checkbox"
-        checked={agree}
-        onChange={(e) => {
-          setAgree(e.target.checked);
-          setErrors((prev) => ({ ...prev, agree: "" }));
-        }}
-        error={errors.agree}
-        label={
-          <span className="text-slate-600 dark:text-slate-400">
-            I agree to the{" "}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <InputField
+            label="First Name"
+            type="text"
+            name="firstName"
+            placeholder="Enter your first name"
+            icon={User}
+            value={formData.firstName}
+            onChange={handleChange}
+            error={errors.firstName}
+            disabled={loading}
+            required
+          />
+
+          <InputField
+            label="Last Name"
+            type="text"
+            name="lastName"
+            placeholder="Enter your last name"
+            icon={User}
+            value={formData.lastName}
+            onChange={handleChange}
+            error={errors.lastName}
+            disabled={loading}
+            required
+          />
+        </div>
+
+        <InputField
+          label="Email Address"
+          type="email"
+          name="email"
+          placeholder="Enter your email address"
+          icon={Mail}
+          value={formData.email}
+          onChange={handleChange}
+          error={errors.email}
+          disabled={loading}
+          required
+        />
+
+        <InputField
+          label="Phone Number"
+          type="text"
+          name="phone"
+          placeholder="Enter your phone number"
+          icon={Phone}
+          value={formData.phone}
+          onChange={handleChange}
+          error={errors.phone}
+          disabled={loading}
+          required
+        />
+
+        <div className="pt-2">
+          <Button
+            type="submit"
+            text="Continue"
+            loading={loading}
+            icon={ArrowRight}
+          />
+        </div>
+      </form>
+    );
+  }
+
+  // RENDER STEP 2: EMAIL OTP VERIFICATION
+  if (step === 2) {
+    return (
+      <form onSubmit={handleVerifyOtp} className="space-y-6 animate-slide-up text-center">
+        {errors.general && (
+          <div className="rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 px-4 py-3 text-sm text-red-650 dark:text-red-400 font-semibold text-left">
+            {errors.general}
+          </div>
+        )}
+
+        {/* 6 OTP BOXES */}
+        <div className="flex justify-center gap-2 sm:gap-3 direction-ltr py-2" onPaste={handleOtpPaste}>
+          {otp.map((digit, idx) => (
+            <input
+              key={idx}
+              ref={(el) => (otpInputRefs.current[idx] = el)}
+              type="text"
+              maxLength={1}
+              value={digit}
+              onChange={(e) => handleOtpDigitChange(e, idx)}
+              onKeyDown={(e) => handleOtpKeyDown(e, idx)}
+              className="w-12 h-14 sm:w-14 sm:h-16 text-center text-xl sm:text-2xl font-bold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700/80 rounded-2xl focus:outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-100 dark:focus:ring-teal-950/45 transition-all shadow-inner"
+              disabled={loading}
+            />
+          ))}
+        </div>
+
+        <p className="text-xs text-slate-400">
+          Please check your spam or promotions folder if you don't see it in your inbox.
+        </p>
+
+        {/* BUTTON CONTAINER */}
+        <div className="space-y-3 pt-2">
+          <Button
+            type="submit"
+            text="Verify OTP"
+            loading={loading}
+            icon={ShieldCheck}
+          />
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* BACK BUTTON */}
             <button
               type="button"
-              onClick={() => setTermsModal({ open: true, section: "terms" })}
-              className="inline text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline"
+              onClick={() => onStepChange(1)}
+              disabled={loading}
+              className="flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] disabled:opacity-50"
             >
-              Terms & Conditions
-            </button>{" "}
-            and{" "}
-            <button
-              type="button"
-              onClick={() => setTermsModal({ open: true, section: "privacy" })}
-              className="inline text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline"
-            >
-              Privacy Policy
+              <ArrowLeft size={16} />
+              Back
             </button>
-          </span>
-        }
-      />
 
-      <Button
-        type="submit"
-        text="Create Account"
-        loading={loading}
-        disabled={!agree}
-        icon={ShieldCheck}
-      />
+            {/* RESEND BUTTON */}
+            <button
+              type="button"
+              onClick={handleResendOtp}
+              disabled={isResendDisabled || loading || resendCount >= 5}
+              className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-800 ${
+                isResendDisabled || resendCount >= 5
+                  ? "bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-650 cursor-not-allowed"
+                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98]"
+              }`}
+            >
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+              {resendCount >= 5
+                ? "Resend Limit Reached"
+                : isResendDisabled
+                ? `Resend in ${resendTimer}s`
+                : "Resend Code"}
+            </button>
+          </div>
+        </div>
+      </form>
+    );
+  }
 
-      {/* TERMS MODAL */}
-      <TermsModal
-        isOpen={termsModal.open}
-        onClose={() => setTermsModal({ ...termsModal, open: false })}
-        onAccept={() => {
-          setAgree(true);
-          setErrors((prev) => ({ ...prev, agree: "" }));
-        }}
-        section={termsModal.section}
-      />
-    </form>
-  );
+  // RENDER STEP 3: CREATE PASSWORD
+  if (step === 3) {
+    return (
+      <form onSubmit={handleCreateAccount} className="space-y-6 animate-slide-up">
+        {errors.general && (
+          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-650 font-semibold">
+            {errors.general}
+          </div>
+        )}
+
+        <div className="relative">
+          <InputField
+            label="Password"
+            type="password"
+            name="password"
+            placeholder="Create a strong password"
+            icon={Lock}
+            value={formData.password}
+            onChange={handleChange}
+            error={errors.password}
+            disabled={loading}
+            required
+          />
+
+          {/* PASSWORD STRENGTH VISUAL FEEDBACK */}
+          {formData.password && (
+            <div className="mt-1.5 space-y-1 animate-fade-in">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-medium">Password Strength:</span>
+                <span className={`font-bold transition-colors duration-300 ${strength.text}`}>
+                  {strength.label}
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex gap-1">
+                {[1, 2, 3, 4].map((stepIdx) => (
+                  <div
+                    key={stepIdx}
+                    className={`h-full flex-1 transition-all duration-500 ${
+                      stepIdx <= strength.score ? strength.color : "bg-slate-200 dark:bg-slate-700"
+                    }`}
+                  />
+                ))}
+              </div>
+              {strength.score < 4 && (
+                <ul className="text-[11px] text-slate-400 space-y-0.5 mt-0.5 list-disc pl-4">
+                  <li className={formData.password.length >= 8 ? "text-teal-600 font-semibold" : ""}>
+                    At least 8 characters
+                  </li>
+                  <li className={/[A-Z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
+                    At least one uppercase letter
+                  </li>
+                  <li className={/[a-z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
+                    At least one lowercase letter
+                  </li>
+                  <li className={/[0-9]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
+                    At least one number
+                  </li>
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        <InputField
+          label="Confirm Password"
+          type="password"
+          name="confirmPassword"
+          placeholder="Confirm your password"
+          icon={Lock}
+          value={formData.confirmPassword}
+          onChange={handleChange}
+          error={errors.confirmPassword}
+          disabled={loading}
+          required
+        />
+
+        {/* CONSENT COMPONENT */}
+        <div className="flex flex-col gap-1.5">
+          <Checkbox
+            id="agree-checkbox"
+            checked={agree}
+            onChange={(e) => {
+              setAgree(e.target.checked);
+              setErrors((prev) => ({ ...prev, agree: "" }));
+            }}
+            error={errors.agree}
+            label={
+              <span className="text-slate-650 dark:text-slate-400 select-none">
+                I agree to the{" "}
+                <button
+                  type="button"
+                  onClick={() => setTermsModal({ open: true, section: "terms" })}
+                  className="inline text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline transition active:opacity-70"
+                >
+                  Terms & Conditions
+                </button>{" "}
+                and{" "}
+                <button
+                  type="button"
+                  onClick={() => setTermsModal({ open: true, section: "privacy" })}
+                  className="inline text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline transition active:opacity-70"
+                >
+                  Privacy Policy
+                </button>
+              </span>
+            }
+          />
+        </div>
+
+        {/* SUBMIT BUTTON WITH ACCEPTANCE STATE */}
+        <div className="relative">
+          <Button
+            type="submit"
+            text="Create Account"
+            loading={loading}
+            disabled={!agree}
+            icon={ShieldCheck}
+            className={`transition-all duration-300 ${
+              !agree
+                ? "opacity-50 cursor-not-allowed shadow-none scale-100 hover:scale-100"
+                : "opacity-100 shadow-[0_4px_20px_rgba(20,184,181,0.25)] hover:shadow-[0_6px_24px_rgba(20,184,181,0.35)]"
+            }`}
+          />
+        </div>
+
+        {/* TERMS MODAL */}
+        <TermsModal
+          isOpen={termsModal.open}
+          onClose={() => setTermsModal({ ...termsModal, open: false })}
+          onAccept={() => {
+            setAgree(true);
+            setErrors((prev) => ({ ...prev, agree: "" }));
+          }}
+          section={termsModal.section}
+        />
+      </form>
+    );
+  }
+
+  return null;
 };
 
 export default RegisterForm;

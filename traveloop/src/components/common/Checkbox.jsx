@@ -23,6 +23,7 @@ const Checkbox = ({ checked, onChange, error, label, id }) => {
               boxShadow: checked
                 ? "0 4px 12px rgba(20, 184, 181, 0.25)"
                 : "0 1px 2px rgba(0, 0, 0, 0.05)",
+              scale: checked ? [1, 1.15, 1] : 1,
             }}
             transition={{ duration: 0.2, ease: "easeOut" }}
             className={`
