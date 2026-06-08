@@ -4,23 +4,32 @@ import { Capacitor } from "@capacitor/core";
 
 const isNative = Capacitor.isNativePlatform();
 
-const getApiBaseUrl = () => {
-  // If we are in development mode, resolve to local backend IP/host
-  if (import.meta.env.DEV) {
-    const hostname = window.location.hostname;
-    const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "10.0.2.2";
-    const isLocalIp = hostname.startsWith("192.168.") || hostname.startsWith("10.") || hostname.startsWith("172.");
+// ─── API BASE URL ─────────────────────────────────────────────────────────────
+// Single source of truth. Priority order:
+//   1. VITE_API_URL env variable (set in .env or .env.production)
+//   2. Production Vercel backend (hardcoded safety fallback)
+//
+// In DEV mode with no VITE_API_URL, we default to PRODUCTION so the frontend
+// always talks to the live backend — never accidentally to a missing localhost.
+// Set VITE_API_URL=http://localhost:5000 in .env ONLY when running the backend locally.
 
-    if (isLocalHost || isLocalIp) {
-      if (isNative && (hostname === "localhost" || hostname === "127.0.0.1")) {
-        return "http://10.0.2.2:5000/api";
-      }
-      return `http://${hostname}:5000/api`;
-    }
+const PRODUCTION_API = "https://traveloop-751k.vercel.app/api";
+
+const getApiBaseUrl = () => {
+  // 1. Explicit env var always wins (development or production)
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    const clean = envUrl.replace(/\/+$/, ""); // strip trailing slash
+    return clean.endsWith("/api") ? clean : `${clean}/api`;
   }
 
-  // Production or fallback
-  return "https://traveloop-751k.vercel.app/api";
+  // 2. Native Android emulator in local dev (only if explicitly in dev mode)
+  if (isNative && import.meta.env.DEV) {
+    return "http://10.0.2.2:5000/api";
+  }
+
+  // 3. Default: deployed production backend
+  return PRODUCTION_API;
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -30,45 +39,54 @@ export const getApiUrl = (path) => {
   return `${API_BASE_URL}/${cleanPath}`;
 };
 
-// GLOBAL FETCH INTERCEPTOR FOR RETRY LOGIC & JWT EXPIRATION
+// ─── GLOBAL FETCH INTERCEPTOR ────────────────────────────────────────────────
+// Handles: offline guard, 15-second timeout, JWT expiry detection,
+// 5xx retry (max 2 attempts). Does NOT retry connection errors to prevent
+// console flooding with ERR_CONNECTION_REFUSED.
+
 const originalFetch = window.fetch;
+const REQUEST_TIMEOUT_MS = 15000;
+const MAX_SERVER_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 1000;
 
 window.fetch = async function (url, options = {}) {
+  // ── OFFLINE GUARD ──────────────────────────────────────────────────────────
   if (!navigator.onLine) {
     const method = (options.method || "GET").toUpperCase();
-
-    if (
-      method === "POST" ||
-      method === "PUT" ||
-      method === "DELETE"
-    ) {
-      alert(
-        "Save operations are disabled while offline. Please connect to the internet."
-      );
-
-      throw new Error(
-        "Save operations are disabled while offline. Please connect to the internet."
-      );
+    if (method === "POST" || method === "PUT" || method === "DELETE") {
+      const msg =
+        "You are offline. Please check your internet connection and try again.";
+      alert(msg);
+      throw new Error(msg);
     }
   }
 
-  const retries = 3;
-  const initialDelay = 1000;
-
-  let activeRequest = url;
-
   const executeFetch = async (attempt) => {
-    try {
-      let requestParam;
-      if (activeRequest instanceof Request) {
-        requestParam = activeRequest;
-        activeRequest = activeRequest.clone();
-      } else {
-        requestParam = activeRequest;
-      }
-      const response = await originalFetch(requestParam, options);
+    // ── TIMEOUT ────────────────────────────────────────────────────────────
+    let timeoutId = null;
+    let abortController = null;
 
-      // Handle Session Expirations (401 only)
+    // Only create our own abort controller if the caller didn't pass one
+    if (!options.signal) {
+      abortController = new AbortController();
+      timeoutId = setTimeout(
+        () => abortController.abort(),
+        REQUEST_TIMEOUT_MS
+      );
+    }
+
+    const fetchOptions = abortController
+      ? { ...options, signal: abortController.signal }
+      : options;
+
+    try {
+      // Clone Request objects so we can re-use them on retry
+      const requestParam = url instanceof Request ? url.clone() : url;
+      const response = await originalFetch(requestParam, fetchOptions);
+
+      if (timeoutId) clearTimeout(timeoutId);
+
+      // ── JWT EXPIRATION (401) ─────────────────────────────────────────────
       if (response.status === 401) {
         const urlStr =
           typeof url === "string"
@@ -80,7 +98,10 @@ window.fetch = async function (url, options = {}) {
         const isAuthRoute =
           urlStr.includes("/auth/login") ||
           urlStr.includes("/auth/register") ||
-          urlStr.includes("/auth/google");
+          urlStr.includes("/auth/google") ||
+          urlStr.includes("/auth/send-otp") ||
+          urlStr.includes("/auth/verify-otp") ||
+          urlStr.includes("/auth/forgot-password");
 
         if (!isAuthRoute) {
           const protectedPaths = [
@@ -97,56 +118,68 @@ window.fetch = async function (url, options = {}) {
           ];
 
           const currentPath = window.location.pathname;
-
-          if (
-            protectedPaths.some((path) =>
-              currentPath.startsWith(path)
-            )
-          ) {
+          if (protectedPaths.some((p) => currentPath.startsWith(p))) {
             console.warn(
-              "[API] JWT token invalid or expired (status:", response.status, "). Dispatching auth:expired."
+              "[API] JWT expired or invalid (401). Dispatching auth:expired."
             );
-            // Dispatch custom event — AuthContext listener calls logout() + React Router navigates cleanly
-            // This avoids the blank-screen flash from window.location.href hard reload
             window.dispatchEvent(new CustomEvent("auth:expired"));
           }
         }
       }
 
-      // Retry on 5xx errors
+      // ── RETRY ON 5xx SERVER ERRORS ONLY ─────────────────────────────────
       if (
         !response.ok &&
         response.status >= 500 &&
-        attempt < retries
+        attempt < MAX_SERVER_RETRIES
       ) {
-        const backoffDelay =
-          initialDelay * Math.pow(2, attempt);
-
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
         console.warn(
-          `Fetch to ${url} failed with status ${response.status}. Retrying in ${backoffDelay}ms...`
+          `[API] Server error ${response.status}. Retry ${attempt + 1}/${MAX_SERVER_RETRIES} in ${delay}ms…`
         );
-
-        await new Promise((resolve) =>
-          setTimeout(resolve, backoffDelay)
-        );
-
+        await new Promise((r) => setTimeout(r, delay));
         return executeFetch(attempt + 1);
       }
 
       return response;
     } catch (err) {
-      if (attempt < retries) {
-        const backoffDelay =
-          initialDelay * Math.pow(2, attempt);
+      if (timeoutId) clearTimeout(timeoutId);
 
+      // ── TIMEOUT ──────────────────────────────────────────────────────────
+      if (err.name === "AbortError") {
+        console.error(
+          `[API] Request timed out (${REQUEST_TIMEOUT_MS / 1000}s): ${url}`
+        );
+        throw new Error(
+          "Request timed out. Please check your internet connection and try again."
+        );
+      }
+
+      // ── CONNECTION REFUSED / NETWORK ERROR — no automatic retry ──────────
+      // Retrying a connection that is refused floods the console and gives no
+      // benefit. Surface a clear message immediately.
+      const msg = err.message || "";
+      const isConnectionError =
+        msg.includes("Failed to fetch") ||
+        msg.includes("ERR_CONNECTION_REFUSED") ||
+        msg.includes("NetworkError") ||
+        msg.includes("net::ERR") ||
+        msg.includes("Load failed");
+
+      if (isConnectionError) {
+        console.error(`[API] Connection error for ${url}:`, msg);
+        throw new Error(
+          "Unable to connect to the server. Please check your internet connection."
+        );
+      }
+
+      // ── OTHER ERRORS — retry up to MAX_SERVER_RETRIES ───────────────────
+      if (attempt < MAX_SERVER_RETRIES) {
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
         console.warn(
-          `Fetch to ${url} failed with error: ${err.message}. Retrying in ${backoffDelay}ms...`
+          `[API] Fetch error (${msg}). Retry ${attempt + 1}/${MAX_SERVER_RETRIES} in ${delay}ms…`
         );
-
-        await new Promise((resolve) =>
-          setTimeout(resolve, backoffDelay)
-        );
-
+        await new Promise((r) => setTimeout(r, delay));
         return executeFetch(attempt + 1);
       }
 

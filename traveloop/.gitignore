@@ -22,5 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-traveloop/.env
+# Environment variable files — never commit secrets
+.env
+.env.*
+!.env.example

@@ -28,8 +28,13 @@ import aiRoutes from "./routes/aiRoutes.js";
 
 dotenv.config();
 
-// MongoDB
-connectDB();
+// MongoDB — non-fatal on Vercel (DB errors return 503, not crash)
+let dbConnected = false;
+connectDB()
+  .then(() => { dbConnected = true; })
+  .catch((err) => {
+    console.error("[Server] MongoDB failed to connect. API routes requiring DB will return 503.", err.message);
+  });
 
 const app = express();
 
@@ -70,9 +75,11 @@ const authLimiter = rateLimit({
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:3000",
   "https://traveloop-751k.vercel.app",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
+
 
 app.use(
   cors({
@@ -109,7 +116,7 @@ app.use(
   })
 );
 
-app.options("*", cors());
+app.options("*all", cors());
 
 /* -----------------------------
    SECURITY
@@ -141,6 +148,18 @@ app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
     message: "TravelLoop Backend Running 🚀",
+    db: dbConnected ? "connected" : "disconnected",
+  });
+});
+
+// Health check endpoint — useful for Vercel deployment verification
+app.get("/api/health", (req, res) => {
+  res.status(dbConnected ? 200 : 503).json({
+    success: dbConnected,
+    status: dbConnected ? "healthy" : "degraded",
+    db: dbConnected ? "connected" : "disconnected — set MONGO_URI in Vercel env vars",
+    env: process.env.NODE_ENV || "development",
+    timestamp: new Date().toISOString(),
   });
 });
 

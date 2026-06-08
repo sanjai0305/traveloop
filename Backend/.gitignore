@@ -2,8 +2,10 @@
 # BACKEND SPECIFIC
 # =========================
 
-# ENV FILES
-Backend/.env
+# Environment variable files — never commit secrets
+.env
+.env.*
+!.env.example
 
 # NODE MODULES
 Backend/node_modules/
