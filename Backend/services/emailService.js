@@ -40,8 +40,48 @@ const EMAIL_TEMPLATE_WRAPPER = (content) => `
   </div>
 `;
 
+
+export const sendOtpEmail = async (to, firstName, otpCode) => {
+  const transporter = createTransporter();
+  if (!transporter) return;
+
+  const html = EMAIL_TEMPLATE_WRAPPER(`
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span style="font-size: 48px;">✈️</span>
+    </div>
+    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Verify Your Email Address</h2>
+    <p>Hi ${firstName || "Traveler"},</p>
+    <p>Thank you for choosing <strong>Traveloop</strong>! To complete your registration and begin planning your next adventures, please use the following one-time verification code:</p>
+    
+    <div style="background-color: #f8fafc; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0; border: 1px solid #f1f5f9;">
+      <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; display: block; margin-bottom: 8px;">One-Time Verification Code</span>
+      <h3 style="margin: 0; color: ${BRAND_COLOR}; font-size: 36px; font-weight: 800; letter-spacing: 6px;">${otpCode}</h3>
+      <span style="color: #94a3b8; font-size: 12px; display: block; margin-top: 12px;">This code is valid for <strong>5 minutes</strong>.</span>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; color: #64748b;">
+      <tr>
+        <td style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #f8fafc;">
+          <strong>Security Notice:</strong> The Traveloop team will never ask for your password or this verification code via phone, chat, or email. If you did not request this code, please ignore this email.
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin-top: 24px;">Let's get your bags packed and journey started!</p>
+    <p>Warmly,<br><strong>The Traveloop Team</strong></p>
+  `);
+
+  await transporter.sendMail({
+    from: `"Traveloop" <${process.env.GOOGLE_SENDER_EMAIL}>`,
+    to,
+    subject: "Verify Your Traveloop Account ✈️",
+    html,
+  });
+};
+
 export const sendWelcomeEmail = async (to, firstName) => {
   const transporter = createTransporter();
+
   if (!transporter) return;
 
   const html = EMAIL_TEMPLATE_WRAPPER(`

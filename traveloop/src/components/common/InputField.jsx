@@ -27,10 +27,10 @@ const InputField = ({
         <label
           className="
             block
-            mb-3
+            mb-1.5
             
-            text-sm
-            md:text-base
+            text-xs
+            md:text-sm
             
             font-semibold
             text-slate-700
@@ -50,10 +50,10 @@ const InputField = ({
           
           flex
           items-center
-          gap-4
+          gap-3
           
-          px-5
-          py-4
+          px-4
+          py-3
           
           rounded-2xl
           
@@ -104,7 +104,7 @@ const InputField = ({
               group-focus-within:text-teal-600
             "
           >
-            <Icon size={22} />
+            <Icon size={20} />
           </div>
         )}
 
@@ -131,8 +131,8 @@ const InputField = ({
             outline-none
             
             text-slate-700
-            text-base
-            md:text-lg
+            text-sm
+            md:text-base
             
             placeholder:text-slate-400
             

@@ -1,13 +1,17 @@
 import assert from "assert";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import Otp from "./models/Otp.js";
 
 const BASE_URL = "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
 const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.message}\x1b[0m`);
-
 async function runTests() {
   console.log("=== TRAVELOOP PRODUCTION API TEST SUITE ===\n");
-  
+  dotenv.config();
+  await mongoose.connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/traveloop");
+
   let token = null;
   let testTripId = null;
   let testShareToken = null;
@@ -16,7 +20,51 @@ async function runTests() {
 
   // 1. AUTHENTICATION TESTS
   try {
-    // A. Register User
+    // A. Send OTP
+    const sendOtpRes = await fetch(`${BASE_URL}/auth/send-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: "QA",
+        lastName: "Tester",
+        email: testEmail,
+        password: testPassword,
+        phone: "+911234567890",
+        city: "Chennai",
+        country: "India",
+        acceptedTerms: true,
+        termsVersion: "2026-06",
+      }),
+    });
+    const sendOtpData = await sendOtpRes.json();
+    assert.strictEqual(sendOtpRes.status, 200, `Send OTP should return 200 OK. Server Error: ${sendOtpData.message || JSON.stringify(sendOtpData)}`);
+    assert.strictEqual(sendOtpData.success, true, "Send OTP success should be true");
+    logPass("Auth: Send Verification OTP");
+
+    // B. Query OTP from MongoDB
+    const otpRecord = await Otp.findOne({ email: testEmail });
+    assert.ok(otpRecord, "OTP document should exist in database");
+    assert.ok(otpRecord.otp, "OTP record should contain a code");
+    const testOtp = otpRecord.otp;
+    logPass(`Auth: DB Query OTP code (${testOtp})`);
+
+    // C. Verify OTP to get token
+    const verifyRes = await fetch(`${BASE_URL}/auth/verify-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: testEmail,
+        otp: testOtp,
+      }),
+    });
+    const verifyData = await verifyRes.json();
+    assert.strictEqual(verifyRes.status, 200, "Verify OTP should return 200 OK");
+    assert.strictEqual(verifyData.success, true, "Verify OTP success should be true");
+    assert.ok(verifyData.otpToken, "Verify OTP should yield a verification token");
+    const otpToken = verifyData.otpToken;
+    logPass("Auth: Verify OTP and Obtain Token");
+
+    // D. Register User using OTP Token
     const regRes = await fetch(`${BASE_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -25,9 +73,12 @@ async function runTests() {
         lastName: "Tester",
         email: testEmail,
         password: testPassword,
-        phone: "1234567890",
+        phone: "+911234567890",
         city: "Chennai",
         country: "India",
+        acceptedTerms: true,
+        termsVersion: "2026-06",
+        otpToken,
       }),
     });
     const regData = await regRes.json();
@@ -207,6 +258,8 @@ async function runTests() {
   console.log("\n===========================================");
   console.log("All test cases completed successfully! 🎉");
   console.log("===========================================\n");
+  
+  await mongoose.connection.close();
 }
 
 runTests().catch(err => {

@@ -17,6 +17,7 @@ import AndroidBackButtonHandler from "../components/mobile/AndroidBackButtonHand
 // PAGES (Statically imported for instant startup)
 import Login from "../pages/Login";
 import Register from "../pages/Register";
+import VerifyEmail from "../pages/VerifyEmail";
 
 // LAZY LOADED PAGES
 const Dashboard = lazy(() => import("../pages/Dashboard"));
@@ -83,6 +84,12 @@ const AppRoutes = () => {
           <Route
             path="/register"
             element={<Register />}
+          />
+
+          {/* VERIFY EMAIL */}
+          <Route
+            path="/verify-email"
+            element={<VerifyEmail />}
           />
 
           {/* FORGOT PASSWORD */}

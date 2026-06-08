@@ -12,8 +12,9 @@ import { useNavigate } from "react-router-dom";
 import InputField from "../common/InputField";
 import Button from "../common/Button";
 import { useAuth } from "../../context/AuthContext";
-import { registerWithEmailPassword } from "../../services/authService";
+import { sendOtpCode } from "../../services/authService";
 import TermsModal from "./TermsModal";
+import Checkbox from "../common/Checkbox";
 
 const RegisterForm = () => {
   const navigate = useNavigate();
@@ -145,30 +146,32 @@ const RegisterForm = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // REGISTER
+  // REGISTER & SEND OTP
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
 
     setLoading(true);
     try {
-      const data = await registerWithEmailPassword({
+      await sendOtpCode({
         ...formData,
         acceptedTerms: agree,
         termsVersion: "2026-06",
       });
 
-      // Save auth state globally & locally
-      login(data.user, data.token);
-
-      // Clear session storage cache
-      sessionStorage.removeItem("traveloop_register_form");
-
-      // Navigate to dashboard
-      navigate("/dashboard", { replace: true });
+      // Navigate to verification screen, passing full registration details in state
+      navigate("/verify-email", {
+        state: {
+          formData: {
+            ...formData,
+            acceptedTerms: agree,
+            termsVersion: "2026-06",
+          },
+        },
+      });
     } catch (error) {
-      console.error("[RegisterForm] Registration error:", error);
-      setErrors({ general: error.message || "Registration failed. Please try again." });
+      console.error("[RegisterForm] OTP send error:", error);
+      setErrors({ general: error.message || "Failed to send verification code. Please try again." });
     } finally {
       setLoading(false);
     }
@@ -183,29 +186,31 @@ const RegisterForm = () => {
         </div>
       )}
 
-      <InputField
-        label="First Name"
-        type="text"
-        name="firstName"
-        placeholder="Enter your first name"
-        icon={User}
-        value={formData.firstName}
-        onChange={handleChange}
-        error={errors.firstName}
-        required
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <InputField
+          label="First Name"
+          type="text"
+          name="firstName"
+          placeholder="Enter your first name"
+          icon={User}
+          value={formData.firstName}
+          onChange={handleChange}
+          error={errors.firstName}
+          required
+        />
 
-      <InputField
-        label="Last Name"
-        type="text"
-        name="lastName"
-        placeholder="Enter your last name"
-        icon={User}
-        value={formData.lastName}
-        onChange={handleChange}
-        error={errors.lastName}
-        required
-      />
+        <InputField
+          label="Last Name"
+          type="text"
+          name="lastName"
+          placeholder="Enter your last name"
+          icon={User}
+          value={formData.lastName}
+          onChange={handleChange}
+          error={errors.lastName}
+          required
+        />
+      </div>
 
       <InputField
         label="Email Address"
@@ -231,29 +236,31 @@ const RegisterForm = () => {
         required
       />
 
-      <InputField
-        label="City"
-        type="text"
-        name="city"
-        placeholder="Enter your city"
-        icon={MapPin}
-        value={formData.city}
-        onChange={handleChange}
-        error={errors.city}
-        required
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <InputField
+          label="City"
+          type="text"
+          name="city"
+          placeholder="Enter your city"
+          icon={MapPin}
+          value={formData.city}
+          onChange={handleChange}
+          error={errors.city}
+          required
+        />
 
-      <InputField
-        label="Country"
-        type="text"
-        name="country"
-        placeholder="Enter your country"
-        icon={Globe}
-        value={formData.country}
-        onChange={handleChange}
-        error={errors.country}
-        required
-      />
+        <InputField
+          label="Country"
+          type="text"
+          name="country"
+          placeholder="Enter your country"
+          icon={Globe}
+          value={formData.country}
+          onChange={handleChange}
+          error={errors.country}
+          required
+        />
+      </div>
 
       <div className="relative">
         <InputField
@@ -270,7 +277,7 @@ const RegisterForm = () => {
 
         {/* PASSWORD STRENGTH VISUAL FEEDBACK */}
         {formData.password && (
-          <div className="mt-2 space-y-1.5 animate-fade-in">
+          <div className="mt-1.5 space-y-1 animate-fade-in">
             <div className="flex justify-between items-center text-xs">
               <span className="text-slate-400 font-medium">Password Strength:</span>
               <span className={`font-bold transition-colors duration-300 ${strength.text}`}>
@@ -287,42 +294,42 @@ const RegisterForm = () => {
                 />
               ))}
             </div>
-            <ul className="text-[11px] text-slate-400 space-y-0.5 mt-1 list-disc pl-4">
-              <li className={formData.password.length >= 8 ? "text-teal-600 font-semibold" : ""}>
-                At least 8 characters
-              </li>
-              <li className={/[A-Z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
-                At least one uppercase letter
-              </li>
-              <li className={/[a-z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
-                At least one lowercase letter
-              </li>
-              <li className={/[0-9]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
-                At least one number
-              </li>
-            </ul>
+            {strength.score < 4 && (
+              <ul className="text-[11px] text-slate-400 space-y-0.5 mt-0.5 list-disc pl-4">
+                <li className={formData.password.length >= 8 ? "text-teal-600 font-semibold" : ""}>
+                  At least 8 characters
+                </li>
+                <li className={/[A-Z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
+                  At least one uppercase letter
+                </li>
+                <li className={/[a-z]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
+                  At least one lowercase letter
+                </li>
+                <li className={/[0-9]/.test(formData.password) ? "text-teal-600 font-semibold" : ""}>
+                  At least one number
+                </li>
+              </ul>
+            )}
           </div>
         )}
       </div>
 
       {/* TERMS & CONDITIONS CHECKBOX */}
-      <div className="flex flex-col gap-1 my-4">
-        <label className="flex items-start gap-3 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={agree}
-            onChange={(e) => {
-              setAgree(e.target.checked);
-              setErrors((prev) => ({ ...prev, agree: "" }));
-            }}
-            className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 mt-1 dark:bg-slate-800 dark:border-slate-700 cursor-pointer"
-          />
-          <span className="text-sm text-slate-600 dark:text-slate-400">
+      <Checkbox
+        id="agree-checkbox"
+        checked={agree}
+        onChange={(e) => {
+          setAgree(e.target.checked);
+          setErrors((prev) => ({ ...prev, agree: "" }));
+        }}
+        error={errors.agree}
+        label={
+          <span className="text-slate-600 dark:text-slate-400">
             I agree to the{" "}
             <button
               type="button"
               onClick={() => setTermsModal({ open: true, section: "terms" })}
-              className="text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline"
+              className="inline text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline"
             >
               Terms & Conditions
             </button>{" "}
@@ -330,16 +337,13 @@ const RegisterForm = () => {
             <button
               type="button"
               onClick={() => setTermsModal({ open: true, section: "privacy" })}
-              className="text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline"
+              className="inline text-teal-600 hover:text-teal-700 dark:text-teal-450 dark:hover:text-teal-350 font-bold hover:underline"
             >
               Privacy Policy
             </button>
           </span>
-        </label>
-        {errors.agree && (
-          <p className="text-xs text-rose-500 font-bold mt-1 pl-7">{errors.agree}</p>
-        )}
-      </div>
+        }
+      />
 
       <Button
         type="submit"
@@ -353,6 +357,10 @@ const RegisterForm = () => {
       <TermsModal
         isOpen={termsModal.open}
         onClose={() => setTermsModal({ ...termsModal, open: false })}
+        onAccept={() => {
+          setAgree(true);
+          setErrors((prev) => ({ ...prev, agree: "" }));
+        }}
         section={termsModal.section}
       />
     </form>

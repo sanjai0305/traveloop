@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, X, Send, Zap } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 const QUICK_ACTIONS = [
   { emoji: "🗺️", label: "Generate Itinerary",   prompt: "Generate a 5-day itinerary for Bali, Indonesia" },
@@ -30,6 +31,7 @@ const getResponse = (msg) => {
 };
 
 const AIAssistant = ({ isOpen, onClose }) => {
+  const location = useLocation();
   const [messages, setMessages] = useState([
     { id: 1, role: "ai", text: MOCK_RESPONSES.default },
   ]);
@@ -48,6 +50,12 @@ const AIAssistant = ({ isOpen, onClose }) => {
       window.removeEventListener("hardwareBack", handleHardwareBack);
     };
   }, [isOpen, onClose]);
+
+  const isAuthScreen = ["/", "/login", "/register", "/forgot-password", "/privacy", "/terms", "/terms-and-conditions"].some(
+    path => location.pathname === path || location.pathname.startsWith(path + "/")
+  );
+
+  if (isAuthScreen) return null;
 
   const sendMessage = async (text) => {
     if (!text.trim()) return;

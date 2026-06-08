@@ -141,11 +141,12 @@ const RegisterCard = () => {
         </div>
 
         {/* HEADING */}
-        <div className="text-center mt-8">
+        <div className="text-center mt-6">
           
           <h2
             className="
-              text-4xl
+              text-2xl
+              sm:text-4xl
               md:text-5xl
               
               font-extrabold
@@ -160,14 +161,14 @@ const RegisterCard = () => {
 
           <p
             className="
-              mt-4
+              mt-2
               
               text-slate-500
               
               text-base
               md:text-lg
               
-              leading-7
+              leading-6
             "
           >
             Join Traveloop and start planning
@@ -176,7 +177,7 @@ const RegisterCard = () => {
         </div>
 
         {/* FORM */}
-        <div className="mt-10">
+        <div className="mt-6">
           <RegisterForm />
         </div>
 

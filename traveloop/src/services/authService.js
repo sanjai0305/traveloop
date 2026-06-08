@@ -7,8 +7,7 @@ import {
   signOut,
 } from "firebase/auth";
 import { createUserProfile, updateLastLogin } from "./firestoreService";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+import { getApiUrl } from "../utils/api";
 
 /**
  * Helper to make API requests to the backend.
@@ -17,7 +16,7 @@ const apiRequest = async (endpoint, method, body) => {
   const headers = {
     "Content-Type": "application/json",
   };
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const response = await fetch(getApiUrl(endpoint), {
     method,
     headers,
     body: JSON.stringify(body),
@@ -31,9 +30,23 @@ const apiRequest = async (endpoint, method, body) => {
 };
 
 /**
+ * Sends OTP verification code.
+ */
+export const sendOtpCode = async (formData) => {
+  return await apiRequest("/auth/send-otp", "POST", formData);
+};
+
+/**
+ * Verifies OTP code.
+ */
+export const verifyOtpCode = async (email, otp) => {
+  return await apiRequest("/auth/verify-otp", "POST", { email, otp });
+};
+
+/**
  * Registers a user in Firebase Auth, then Backend, then Firestore.
  */
-export const registerWithEmailPassword = async (formData) => {
+export const registerWithEmailPassword = async (formData, otpToken) => {
   const { email, password, firstName, lastName, phone, city, country, acceptedTerms, termsVersion } = formData;
 
   // 1. Create User in Firebase Auth
@@ -42,11 +55,14 @@ export const registerWithEmailPassword = async (formData) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     firebaseUser = userCredential.user;
   } catch (error) {
-    console.error("Firebase registration failed:", error);
+    console.error("[Internal Auth Error] Firebase registration failed:", error);
+    if (error && (error.code === "auth/operation-not-allowed" || (error.message && error.message.includes("auth/operation-not-allowed")))) {
+      throw new Error("Email registration is currently unavailable. Please try again later.");
+    }
     throw new Error(error.message || "Failed to create Firebase Auth account");
   }
 
-  // 2. Create User in Backend (passing firebaseUid)
+  // 2. Create User in Backend (passing firebaseUid and otpToken)
   let backendData;
   try {
     backendData = await apiRequest("/auth/register", "POST", {
@@ -60,6 +76,7 @@ export const registerWithEmailPassword = async (formData) => {
       acceptedTerms,
       termsVersion,
       firebaseUid: firebaseUser.uid,
+      otpToken,
     });
   } catch (error) {
     // Clean up Firebase Auth user if backend creation fails to keep state in sync

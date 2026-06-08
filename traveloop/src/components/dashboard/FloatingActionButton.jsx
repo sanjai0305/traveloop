@@ -1,6 +1,7 @@
 // src/components/dashboard/FloatingActionButton.jsx
 
 import React from "react";
+import { useLocation } from "react-router-dom";
 
 import {
   Plus,
@@ -8,7 +9,14 @@ import {
 } from "lucide-react";
 
 const FloatingActionButton = () => {
-  
+  const location = useLocation();
+
+  const isAuthScreen = ["/", "/login", "/register", "/forgot-password", "/privacy", "/terms", "/terms-and-conditions"].some(
+    path => location.pathname === path || location.pathname.startsWith(path + "/")
+  );
+
+  if (isAuthScreen) return null;
+
   // HANDLE CLICK
   const handleCreateTrip = () => {
     console.log("Create New Trip");

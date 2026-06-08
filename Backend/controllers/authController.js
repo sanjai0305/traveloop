@@ -6,7 +6,9 @@ import Flight from "../models/Flight.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
-import { sendWelcomeEmail } from "../services/emailService.js";
+import { sendWelcomeEmail, sendOtpEmail } from "../services/emailService.js";
+import Otp from "../models/Otp.js";
+
 
 
 
@@ -25,8 +27,8 @@ const generateToken = (id) => {
 
 
 
-// REGISTER USER
-export const registerUser = async (req, res) => {
+// SEND OTP
+export const sendOtp = async (req, res) => {
   try {
     const {
       firstName,
@@ -35,17 +37,15 @@ export const registerUser = async (req, res) => {
       phone,
       city,
       country,
-      additionalInfo,
       password,
       acceptedTerms,
       termsVersion,
-      firebaseUid,
     } = req.body;
 
     if (!firstName || !lastName || !email || !phone || !city || !country || !password) {
       return res.status(400).json({
         success: false,
-        message: "All registration fields (firstName, lastName, email, phone, city, country, password) are required for email accounts",
+        message: "All registration fields (firstName, lastName, email, phone, city, country, password) are required.",
       });
     }
 
@@ -89,6 +89,225 @@ export const registerUser = async (req, res) => {
     if (userExists) {
       return res.status(400).json({
         success: false,
+        message: "Email is already registered.",
+      });
+    }
+
+    // CHECK RESEND LIMIT COOLDOWN (30 seconds)
+    const existingOtp = await Otp.findOne({ email: email.trim().toLowerCase() });
+    if (existingOtp) {
+      const now = new Date();
+      if (now < existingOtp.resendAvailableAt) {
+        const secondsLeft = Math.ceil((existingOtp.resendAvailableAt - now) / 1000);
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${secondsLeft} seconds before requesting a new code.`,
+        });
+      }
+    }
+
+    // GENERATE SECURE 6-DIGIT OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // SAVE OR UPDATE OTP IN DATABASE
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes
+    const resendAvailableAt = new Date(now.getTime() + 30 * 1000); // 30 seconds
+
+    if (existingOtp) {
+      existingOtp.otp = otpCode;
+      existingOtp.expiresAt = expiresAt;
+      existingOtp.resendAvailableAt = resendAvailableAt;
+      existingOtp.attempts = 0; // reset attempts
+      await existingOtp.save();
+    } else {
+      await Otp.create({
+        email: email.trim().toLowerCase(),
+        otp: otpCode,
+        expiresAt,
+        resendAvailableAt,
+        attempts: 0,
+      });
+    }
+
+    // SEND OTP EMAIL
+    await sendOtpEmail(email.trim().toLowerCase(), firstName, otpCode);
+
+    res.status(200).json({
+      success: true,
+      message: "Verification code sent successfully to your email.",
+    });
+  } catch (error) {
+    console.error("[sendOtp] Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to send verification code.",
+    });
+  }
+};
+
+// VERIFY OTP
+export const verifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and verification code are required.",
+      });
+    }
+
+    const otpDoc = await Otp.findOne({ email: email.trim().toLowerCase() });
+    if (!otpDoc) {
+      return res.status(400).json({
+        success: false,
+        message: "Verification code has expired or was not requested. Please try again.",
+      });
+    }
+
+    // Manual expiry check (just in case TTL index hasn't run yet)
+    if (new Date() > otpDoc.expiresAt) {
+      await Otp.deleteOne({ _id: otpDoc._id });
+      return res.status(400).json({
+        success: false,
+        message: "Verification code has expired. Please request a new one.",
+      });
+    }
+
+    // Increment attempts
+    otpDoc.attempts += 1;
+    await otpDoc.save();
+
+    // Check retry limit (max 5 attempts)
+    if (otpDoc.attempts > 5) {
+      await Otp.deleteOne({ _id: otpDoc._id });
+      return res.status(400).json({
+        success: false,
+        message: "Too many failed attempts. Please request a new verification code.",
+      });
+    }
+
+    // Verify OTP
+    if (otpDoc.otp !== otp.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid verification code. Attempts remaining: ${5 - otpDoc.attempts}`,
+      });
+    }
+
+    // Correct OTP! Delete from database (one-time use)
+    await Otp.deleteOne({ _id: otpDoc._id });
+
+    // Generate signed short-lived OTP token
+    const otpToken = jwt.sign(
+      { email: email.trim().toLowerCase(), otpVerified: true },
+      process.env.JWT_SECRET,
+      { expiresIn: "10m" }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Email verified successfully.",
+      otpToken,
+    });
+  } catch (error) {
+    console.error("[verifyOtp] Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to verify code.",
+    });
+  }
+};
+
+// REGISTER USER
+export const registerUser = async (req, res) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      city,
+      country,
+      additionalInfo,
+      password,
+      acceptedTerms,
+      termsVersion,
+      firebaseUid,
+      otpToken,
+    } = req.body;
+
+    if (!firstName || !lastName || !email || !phone || !city || !country || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "All registration fields (firstName, lastName, email, phone, city, country, password) are required for email accounts",
+      });
+    }
+
+    if (acceptedTerms !== true || termsVersion !== "2026-06") {
+      return res.status(400).json({
+        success: false,
+        message: "You must accept the Terms & Conditions and Privacy Policy to register.",
+      });
+    }
+
+    // Email format validation
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address.",
+      });
+    }
+
+    // Phone validation
+    if (!isValidPhone(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid phone number (7-15 digits, numeric).",
+      });
+    }
+
+    // Password strength check
+    const pwdStrength = isStrongPassword(password);
+    if (!pwdStrength.valid) {
+      return res.status(400).json({
+        success: false,
+        message: pwdStrength.message,
+      });
+    }
+
+    // Verify OTP Token
+    if (!otpToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Email verification is required before registration.",
+      });
+    }
+
+    try {
+      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
+      if (decoded.email !== email.trim().toLowerCase() || !decoded.otpVerified) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired email verification token.",
+        });
+      }
+    } catch (err) {
+      return res.status(400).json({
+        success: false,
+        message: "Email verification has expired. Please verify your email again.",
+      });
+    }
+
+    // CHECK EXISTING USER
+    const userExists = await User.findOne({
+      email: email.trim().toLowerCase(),
+    });
+
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
         message: "User already exists",
       });
     }
@@ -119,6 +338,7 @@ export const registerUser = async (req, res) => {
     } catch (emailErr) {
       console.error("Failed to send welcome email:", emailErr);
     }
+
 
     // RESPONSE
     res.status(201).json({
